@@ -1,0 +1,27 @@
+# model files
+*.onnx
+models/
+
+# meteorological raw data
+gdas/grib2/
+*.grib
+*.grib2
+*.idx
+
+# numpy / netcdf data
+*.npy
+*.npz
+*.nc
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# PyCharm
+.idea/
+
+# temporary/cache files
+*.log
+*.tmp
+.cache/

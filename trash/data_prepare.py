@@ -1,0 +1,113 @@
+# import cdsapi
+#
+# dataset = "reanalysis-era5-pressure-levels"
+# request = {
+#     "product_type": ["reanalysis"],
+#     "variable": [
+#         "geopotential",
+#         "specific_humidity",
+#         "temperature",
+#         "u_component_of_wind",
+#         "v_component_of_wind"
+#     ],
+#     "year": ["2025"],
+#     "month": ["06", "08"],
+#     "day": [
+#         "01", "02", "03",
+#         "26", "27",
+#         "28", "29", "30"
+#     ],
+#     "time": [
+#         "00:00", "01:00", "03:00",
+#         "06:00", "12:00"
+#     ],
+#     "pressure_level": [
+#         "50", "100", "150",
+#         "200", "250", "300",
+#         "400", "500", "600",
+#         "700", "850", "925",
+#         "1000"
+#     ],
+#     "data_format": "netcdf",
+#     "download_format": "unarchived"
+# }
+#
+# client = cdsapi.Client()
+# client.retrieve(dataset, request).download()
+
+
+
+import cdsapi
+import numpy as np
+import netCDF4 as nc
+import os
+from datetime import datetime
+
+c = cdsapi.Client()
+
+#下载下面时间的ear5数据
+date_time = datetime(
+    year=2025,
+    month=7,
+    day=17,
+    hour=0,
+    minute=0)
+
+#源数据存放路径
+cdsdata_dir = os.path.join(
+    os.path.join(os.getcwd(), "model_input/single_time_point/era5"),
+    date_time.strftime("%Y-%m-%d-%H-%M"),
+)
+if not os.path.exists(cdsdata_dir):
+    os.makedirs(cdsdata_dir)
+
+# The variables required
+surface_variables = ['mean_sea_level_pressure', '10m_u_component_of_wind', '10m_v_component_of_wind', '2m_temperature']
+upper_variables = ['geopotential', 'specific_humidity', 'temperature', 'u_component_of_wind', 'v_component_of_wind']
+
+# Area to download
+area = [90, 0, -90, 359.75]
+
+# Pressure levels required
+pressure_levels = ['1000', '925', '850', '700', '600', '500', '400', '300', '250', '200', '150', '100', '50']
+
+# Download the surface data
+c.retrieve('reanalysis-era5-single-levels', {
+    'product_type': 'reanalysis',
+    'format': 'netcdf',
+    'variable': surface_variables,
+    'date': date_time.strftime("%Y-%m-%d"),
+    'time': date_time.strftime("%H:%M"),
+    'area': area,
+}, os.path.join(cdsdata_dir, 'surface.nc'))
+
+# Download the upper air data
+c.retrieve('reanalysis-era5-pressure-levels', {
+    'product_type': 'reanalysis',
+    'format': 'netcdf',
+    'variable': upper_variables,
+    'pressure_level': pressure_levels,
+    'date': date_time.strftime("%Y-%m-%d"),
+    'time': date_time.strftime("%H:%M"),
+    'area': area,
+}, os.path.join(cdsdata_dir, 'upper.nc'))
+
+# Convert the surface data to npy
+surface_data = np.zeros((4, 721, 1440), dtype=np.float32)
+with nc.Dataset(os.path.join(cdsdata_dir , 'surface.nc')) as nc_file:
+    surface_data[0] = nc_file.variables['msl'][:].astype(np.float32)
+    surface_data[1] = nc_file.variables['u10'][:].astype(np.float32)
+    surface_data[2] = nc_file.variables['v10'][:].astype(np.float32)
+    surface_data[3] = nc_file.variables['t2m'][:].astype(np.float32)
+np.save(os.path.join(cdsdata_dir, 'input_surface.npy'), surface_data)
+
+# Convert the upper air data to npy
+upper_data = np.zeros((5, 13, 721, 1440), dtype=np.float32)
+with nc.Dataset(os.path.join(cdsdata_dir , 'upper.nc')) as nc_file:
+    upper_data[0] = (nc_file.variables['z'][:]).astype(np.float32)
+    upper_data[1] = nc_file.variables['q'][:].astype(np.float32)
+    upper_data[2] = nc_file.variables['t'][:].astype(np.float32)
+    upper_data[3] = nc_file.variables['u'][:].astype(np.float32)
+    upper_data[4] = nc_file.variables['v'][:].astype(np.float32)
+np.save(os.path.join(cdsdata_dir, 'input_upper.npy'), upper_data)
+
