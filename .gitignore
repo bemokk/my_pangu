@@ -12,6 +12,7 @@ gdas/grib2/
 *.npy
 *.npz
 *.nc
+Buoy/icoads_202507/
 
 # Python cache
 __pycache__/
