@@ -4,3 +4,4 @@ onnxruntime-gpu
 cdsapi
 netCDF4
 ncvue
+folium==0.20.0
