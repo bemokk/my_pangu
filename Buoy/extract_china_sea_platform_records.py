@@ -10,12 +10,11 @@ NC_DIR = ROOT_DIR / "nc"
 OUT_DIR = ROOT_DIR / "output"
 
 # AREA follows the common meteorological order: [lat_max, lon_min, lat_min, lon_max].
-AREA = [42, 103, 12, 131]
+AREA = [42, 103, 13, 130]
 LAT_MAX, LON_MIN, LAT_MIN, LON_MAX = AREA
 
-AREA_LABEL = f"area_{LAT_MAX:g}_{LON_MIN:g}_{LAT_MIN:g}_{LON_MAX:g}".replace(".", "p")
-DETAIL_OUT = OUT_DIR / f"china_sea_all_platform_records_{AREA_LABEL}.csv"
-SUMMARY_OUT = OUT_DIR / f"china_sea_all_platform_summary_{AREA_LABEL}.csv"
+DETAIL_OUT = OUT_DIR / "china_sea_all_platform_records_area_42_103_13_130.csv"
+SUMMARY_OUT = OUT_DIR / "china_sea_all_platform_summary_area_42_103_13_130.csv"
 
 RENAME_DICT = {
     "lat": "latitude",
