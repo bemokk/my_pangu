@@ -32,6 +32,7 @@ HEX_COUNTS_PNG = OUT_DIR / f"china_sea_hex_counts_area_42_103_13_130_{HEX_SIDE_L
 
 # If True, cells with zero records are labeled as 0. This is usually too dense for 1-degree grids.
 LABEL_ZERO_CELLS = False
+LABEL_EDGE_MARGIN_DEG = 0.18 * HEX_SIDE_DEG
 
 
 def regular_hexagon(center_lon: float, center_lat: float, side_deg: float) -> Polygon:
@@ -174,6 +175,11 @@ def plot_hex_counts(hexes: pd.DataFrame, land_union, ocean_area, records: pd.Dat
         if ocean_part.is_empty:
             continue
         label_point = ocean_part.representative_point()
+        if not (
+            LON_MIN + LABEL_EDGE_MARGIN_DEG <= label_point.x <= LON_MAX - LABEL_EDGE_MARGIN_DEG
+            and LAT_MIN + LABEL_EDGE_MARGIN_DEG <= label_point.y <= LAT_MAX - LABEL_EDGE_MARGIN_DEG
+        ):
+            continue
 
         if count == 0:
             label_color = "#555555"
@@ -191,6 +197,7 @@ def plot_hex_counts(hexes: pd.DataFrame, land_union, ocean_area, records: pd.Dat
             fontweight="bold" if count else "normal",
             transform=projection,
             zorder=5,
+            clip_on=True,
         )
 
     gl = ax.gridlines(
