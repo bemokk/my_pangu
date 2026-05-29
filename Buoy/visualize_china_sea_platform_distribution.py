@@ -11,6 +11,12 @@ OUT_DIR = ROOT_DIR / "output"
 
 AREA = [42, 103, 13, 130]
 LAT_MAX, LON_MIN, LAT_MIN, LON_MAX = AREA
+TARGET_HOURS = [0, 3, 6, 9, 12, 15, 18, 21]
+
+# True includes records within +/-30 minutes of each target UTC hour.
+# False keeps only near-exact target hours.
+INCLUDE_HALF_HOUR_WINDOW = True
+TIME_TOLERANCE_HOURS = 0.5 if INCLUDE_HALF_HOUR_WINDOW else 0.01
 
 DETAIL_CSV = OUT_DIR / "china_sea_all_platform_records_area_42_103_13_130.csv"
 MAP_OUT = OUT_DIR / "china_sea_platform_distribution_area_42_103_13_130.html"
@@ -100,6 +106,35 @@ def build_summary(records: pd.DataFrame) -> pd.DataFrame:
     return summary.sort_values(["obs_count", "platform_id"], ascending=[False, True])
 
 
+def add_target_hour(records: pd.DataFrame) -> pd.DataFrame:
+    records = records.copy()
+
+    if "datetime_utc" in records.columns:
+        records["datetime_utc"] = pd.to_datetime(records["datetime_utc"], errors="coerce")
+        hour_from_time = (
+            records["datetime_utc"].dt.hour
+            + records["datetime_utc"].dt.minute / 60.0
+            + records["datetime_utc"].dt.second / 3600.0
+        )
+    else:
+        hour_from_time = pd.Series(pd.NA, index=records.index, dtype="float64")
+
+    if "hour_utc" not in records.columns:
+        records["hour_utc"] = pd.NA
+
+    records["hour_utc"] = pd.to_numeric(records["hour_utc"], errors="coerce").fillna(hour_from_time)
+
+    target_hours = np.array(TARGET_HOURS, dtype=float)
+    hour_values = records["hour_utc"].to_numpy(dtype=float)
+    raw_diff = np.abs(hour_values[:, None] - target_hours[None, :])
+    diff = np.minimum(raw_diff, 24.0 - raw_diff)
+    nearest_idx = np.nanargmin(np.where(np.isnan(diff), np.inf, diff), axis=1)
+
+    records["target_hour_utc"] = target_hours[nearest_idx].astype(int)
+    records["hour_diff"] = np.abs(records["hour_utc"] - records["target_hour_utc"])
+    return records
+
+
 def add_type_legend(map_obj: folium.Map) -> None:
     legend_html = """
     <div style="
@@ -131,12 +166,14 @@ def main() -> None:
 
     records = pd.read_csv(DETAIL_CSV)
     total_records = len(records)
+    records = add_target_hour(records)
 
     required_cols = ["latitude", "longitude", "wind_dir_deg", "wind_speed_ms"]
     records = records.dropna(subset=required_cols).copy()
     records = records[
         records["wind_dir_deg"].between(1, 360)
         & records["wind_speed_ms"].between(0, 75)
+        & (records["hour_diff"] <= TIME_TOLERANCE_HOURS)
     ].copy()
     summary = build_summary(records)
     summary = summary.dropna(subset=["mean_latitude", "mean_longitude"]).copy()
@@ -222,6 +259,8 @@ def main() -> None:
     ">
       <b>China Sea and nearby ICOADS records</b><br>
       AREA = [42, 103, 13, 130], wind direction/speed required<br>
+      UTC hours: 0, 3, 6, 9, 12, 15, 18, 21
+      ({'±30 min' if INCLUDE_HALF_HOUR_WINDOW else 'exact only'})<br>
       Records shown: {len(records):,} / {total_records:,} | Platforms: {len(summary):,}
     </div>
     """
