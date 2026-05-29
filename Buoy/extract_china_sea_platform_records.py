@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from land_mask import filter_ocean_records
+
 
 ROOT_DIR = Path(__file__).resolve().parent / "icoads_202507"
 NC_DIR = ROOT_DIR / "nc"
@@ -58,7 +60,7 @@ def add_datetime_utc(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def read_area_records(nc_file: Path) -> pd.DataFrame:
+def read_area_records(nc_file: Path):
     keep_vars = [
         "time",
         "date",
@@ -105,6 +107,14 @@ def read_area_records(nc_file: Path) -> pd.DataFrame:
     )
 
     area_df = df.loc[mask].copy()
+    area_count = len(area_df)
+    area_df, dropped_land_count = filter_ocean_records(
+        area_df,
+        lon_min=LON_MIN,
+        lat_min=LAT_MIN,
+        lon_max=LON_MAX,
+        lat_max=LAT_MAX,
+    )
     area_df["source_nc_file"] = nc_file.name
 
     output_cols = [
@@ -122,7 +132,7 @@ def read_area_records(nc_file: Path) -> pd.DataFrame:
         "source_nc_file",
     ]
     output_cols = [col for col in output_cols if col in area_df.columns]
-    return area_df[output_cols]
+    return area_df[output_cols], area_count, dropped_land_count
 
 
 def join_unique_values(series: pd.Series) -> str:
@@ -184,10 +194,18 @@ def main() -> None:
         raise FileNotFoundError(f"No NetCDF files found in {NC_DIR}")
 
     all_records = []
+    total_area_count = 0
+    total_dropped_land_count = 0
     for index, nc_file in enumerate(nc_files, start=1):
         print(f"[{index:02d}/{len(nc_files):02d}] 读取 {nc_file.name}")
-        area_df = read_area_records(nc_file)
-        print(f"  区域内记录数：{len(area_df)}")
+        area_df, area_count, dropped_land_count = read_area_records(nc_file)
+        total_area_count += area_count
+        total_dropped_land_count += dropped_land_count
+        print(
+            f"  区域内记录数：{area_count}；"
+            f"剔除陆地：{dropped_land_count}；"
+            f"保留海面：{len(area_df)}"
+        )
         if not area_df.empty:
             all_records.append(area_df)
 
@@ -203,7 +221,9 @@ def main() -> None:
 
     print("\n倒查完成")
     print(f"AREA: {AREA}")
-    print(f"记录数：{len(records)}")
+    print(f"区域内原始记录数：{total_area_count}")
+    print(f"剔除陆地记录数：{total_dropped_land_count}")
+    print(f"海面记录数：{len(records)}")
     print(f"平台数：{len(summary)}")
     print(f"时间范围：{records['datetime_utc'].min()} 至 {records['datetime_utc'].max()}")
     print(f"明细输出：{DETAIL_OUT}")

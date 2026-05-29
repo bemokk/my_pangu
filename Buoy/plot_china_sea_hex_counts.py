@@ -2,7 +2,6 @@ from pathlib import Path
 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-import cartopy.io.shapereader as shpreader
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,7 +9,8 @@ import pandas as pd
 from matplotlib.path import Path as MplPath
 from matplotlib.patches import Polygon as MplPolygon
 from shapely.geometry import Polygon, box
-from shapely.ops import unary_union
+
+from land_mask import filter_ocean_records, load_land_union
 
 
 ROOT_DIR = Path(__file__).resolve().parent / "icoads_202507"
@@ -75,13 +75,6 @@ def generate_hex_grid(area_polygon: Polygon, side_deg: float) -> pd.DataFrame:
     return pd.DataFrame(centers)
 
 
-def load_land_union(area_polygon: Polygon):
-    land_path = shpreader.natural_earth(resolution="10m", category="physical", name="land")
-    reader = shpreader.Reader(land_path)
-    land_geoms = [geom for geom in reader.geometries() if geom.intersects(area_polygon)]
-    return unary_union(land_geoms)
-
-
 def load_valid_records() -> pd.DataFrame:
     if not DETAIL_CSV.exists():
         raise FileNotFoundError(f"Detail CSV not found: {DETAIL_CSV}")
@@ -100,6 +93,14 @@ def load_valid_records() -> pd.DataFrame:
         & records["wind_dir_deg"].between(1, 360)
         & records["wind_speed_ms"].between(0, 75)
     ].copy()
+    records, dropped_land_count = filter_ocean_records(
+        records,
+        lon_min=LON_MIN,
+        lat_min=LAT_MIN,
+        lon_max=LON_MAX,
+        lat_max=LAT_MAX,
+    )
+    records.attrs["dropped_land_count"] = dropped_land_count
 
     return records
 
@@ -123,7 +124,7 @@ def save_hex_counts(hexes: pd.DataFrame) -> None:
     out.to_csv(HEX_COUNTS_CSV, index=False, encoding="utf-8-sig")
 
 
-def plot_hex_counts(hexes: pd.DataFrame, land_union, records: pd.DataFrame) -> None:
+def plot_hex_counts(hexes: pd.DataFrame, land_union, ocean_area, records: pd.DataFrame) -> None:
     projection = ccrs.PlateCarree()
     fig = plt.figure(figsize=(13.5, 13.0))
     ax = plt.axes(projection=projection)
@@ -169,14 +170,19 @@ def plot_hex_counts(hexes: pd.DataFrame, land_union, records: pd.DataFrame) -> N
         count = int(row["record_count"])
         if count == 0 and not LABEL_ZERO_CELLS:
             continue
+        ocean_part = row.geometry.intersection(ocean_area)
+        if ocean_part.is_empty:
+            continue
+        label_point = ocean_part.representative_point()
+
         if count == 0:
             label_color = "#555555"
         else:
             label_color = "white" if norm(count) > 0.35 else "#222222"
 
         ax.text(
-            row["center_lon"],
-            row["center_lat"],
+            label_point.x,
+            label_point.y,
             str(count),
             ha="center",
             va="center",
@@ -222,7 +228,7 @@ def plot_hex_counts(hexes: pd.DataFrame, land_union, records: pd.DataFrame) -> N
 def main() -> None:
     area_polygon = box(LON_MIN, LAT_MIN, LON_MAX, LAT_MAX)
     records = load_valid_records()
-    land_union = load_land_union(area_polygon)
+    land_union = load_land_union(LON_MIN, LAT_MIN, LON_MAX, LAT_MAX)
     ocean_area = area_polygon.difference(land_union)
 
     hexes = generate_hex_grid(area_polygon, HEX_SIDE_DEG)
@@ -230,9 +236,10 @@ def main() -> None:
     hexes = count_records_by_hex(records, hexes)
 
     save_hex_counts(hexes)
-    plot_hex_counts(hexes, land_union, records)
+    plot_hex_counts(hexes, land_union, ocean_area, records)
 
     print(f"Valid records: {len(records)}")
+    print(f"Land records dropped from valid records: {records.attrs.get('dropped_land_count', 0)}")
     print(f"Hexagons over ocean: {len(hexes)}")
     print(f"Non-empty hexagons: {(hexes['record_count'] > 0).sum()}")
     print(f"Max count in one hexagon: {hexes['record_count'].max()}")
