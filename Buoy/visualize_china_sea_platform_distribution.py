@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 import folium
 import pandas as pd
 from folium.plugins import FastMarkerCluster, Fullscreen, HeatMap, MarkerCluster, MiniMap
@@ -12,7 +13,6 @@ AREA = [42, 103, 13, 130]
 LAT_MAX, LON_MIN, LAT_MIN, LON_MAX = AREA
 
 DETAIL_CSV = OUT_DIR / "china_sea_all_platform_records_area_42_103_13_130.csv"
-SUMMARY_CSV = OUT_DIR / "china_sea_all_platform_summary_area_42_103_13_130.csv"
 MAP_OUT = OUT_DIR / "china_sea_platform_distribution_area_42_103_13_130.html"
 
 
@@ -52,6 +52,54 @@ def build_platform_popup(row: pd.Series, map_lon: float) -> str:
     """
 
 
+def join_unique_values(series: pd.Series) -> str:
+    values = series.dropna().astype(int).astype(str).unique()
+    return ",".join(sorted(values))
+
+
+def minimal_longitude_range(longitudes: pd.Series) -> float:
+    lon = pd.to_numeric(longitudes, errors="coerce").dropna().to_numpy(dtype=float)
+    if lon.size <= 1:
+        return 0.0
+
+    lon = np.mod(lon, 360.0)
+    lon.sort()
+    gaps = np.diff(np.r_[lon, lon[0] + 360.0])
+    return float(360.0 - gaps.max())
+
+
+def build_summary(records: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+
+    for platform_id, group in records.groupby("platform_id", dropna=False):
+        rows.append(
+            {
+                "platform_id": platform_id,
+                "obs_count": int(len(group)),
+                "first_time": group["datetime_utc"].min() if "datetime_utc" in group.columns else "",
+                "last_time": group["datetime_utc"].max() if "datetime_utc" in group.columns else "",
+                "mean_latitude": group["latitude"].mean(),
+                "mean_longitude": group["longitude"].mean(),
+                "min_latitude": group["latitude"].min(),
+                "max_latitude": group["latitude"].max(),
+                "min_longitude": group["longitude"].min(),
+                "max_longitude": group["longitude"].max(),
+                "lat_range_deg": group["latitude"].max() - group["latitude"].min(),
+                "lon_range_deg": minimal_longitude_range(group["longitude"]),
+                "id_indicator_values": join_unique_values(group["id_indicator"]) if "id_indicator" in group.columns else "",
+                "platform_type_values": join_unique_values(group["platform_type"]) if "platform_type" in group.columns else "",
+                "wind_dir_count": int(group["wind_dir_deg"].notna().sum()) if "wind_dir_deg" in group.columns else 0,
+                "wind_speed_count": int(group["wind_speed_ms"].notna().sum()) if "wind_speed_ms" in group.columns else 0,
+            }
+        )
+
+    summary = pd.DataFrame(rows)
+    if summary.empty:
+        return summary
+
+    return summary.sort_values(["obs_count", "platform_id"], ascending=[False, True])
+
+
 def add_type_legend(map_obj: folium.Map) -> None:
     legend_html = """
     <div style="
@@ -80,13 +128,17 @@ def add_type_legend(map_obj: folium.Map) -> None:
 def main() -> None:
     if not DETAIL_CSV.exists():
         raise FileNotFoundError(f"Detail CSV not found: {DETAIL_CSV}")
-    if not SUMMARY_CSV.exists():
-        raise FileNotFoundError(f"Summary CSV not found: {SUMMARY_CSV}")
 
     records = pd.read_csv(DETAIL_CSV)
-    summary = pd.read_csv(SUMMARY_CSV)
+    total_records = len(records)
 
-    records = records.dropna(subset=["latitude", "longitude"]).copy()
+    required_cols = ["latitude", "longitude", "wind_dir_deg", "wind_speed_ms"]
+    records = records.dropna(subset=required_cols).copy()
+    records = records[
+        records["wind_dir_deg"].between(1, 360)
+        & records["wind_speed_ms"].between(0, 75)
+    ].copy()
+    summary = build_summary(records)
     summary = summary.dropna(subset=["mean_latitude", "mean_longitude"]).copy()
 
     records["map_longitude"] = records["longitude"].map(normalize_longitude)
@@ -169,8 +221,8 @@ def main() -> None:
       box-shadow: 0 1px 4px rgba(0,0,0,0.2);
     ">
       <b>China Sea and nearby ICOADS records</b><br>
-      AREA = [42, 103, 13, 130], no time/type restriction<br>
-      Records: {len(records):,} | Platforms: {len(summary):,}
+      AREA = [42, 103, 13, 130], wind direction/speed required<br>
+      Records shown: {len(records):,} / {total_records:,} | Platforms: {len(summary):,}
     </div>
     """
     m.get_root().html.add_child(folium.Element(title_html))
