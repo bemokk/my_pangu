@@ -16,10 +16,11 @@ from shapely.ops import unary_union
 ROOT_DIR = Path(__file__).resolve().parent / "icoads_202507"
 OUT_DIR = ROOT_DIR / "output"
 
-DETAIL_CSV = OUT_DIR / "china_sea_all_platform_records_area_42_103_13_130.csv"
 # AREA follows the common meteorological order: [lat_max, lon_min, lat_min, lon_max].
-AREA = [42, 103, 13, 130]
+AREA = [42, 103, 12, 131]
 LAT_MAX, LON_MIN, LAT_MIN, LON_MAX = AREA
+AREA_LABEL = f"area_{LAT_MAX:g}_{LON_MIN:g}_{LAT_MIN:g}_{LON_MAX:g}".replace(".", "p")
+DETAIL_CSV = OUT_DIR / f"china_sea_all_platform_records_{AREA_LABEL}.csv"
 
 START_DATE = pd.Timestamp("2025-07-01 00:00:00")
 END_DATE = pd.Timestamp("2025-08-04 23:59:59")
@@ -27,8 +28,10 @@ END_DATE = pd.Timestamp("2025-08-04 23:59:59")
 # Configurable regular hexagon side length, in degrees.
 HEX_SIDE_DEG = 1.0
 HEX_SIDE_LABEL = f"side{str(HEX_SIDE_DEG).replace('.', 'p')}deg"
-HEX_COUNTS_CSV = OUT_DIR / f"china_sea_hex_counts_area_42_103_13_130_{HEX_SIDE_LABEL}.csv"
-HEX_COUNTS_PNG = OUT_DIR / f"china_sea_hex_counts_area_42_103_13_130_{HEX_SIDE_LABEL}.png"
+HEX_GRID_LAT_SHIFT_LAYERS = 1
+HEX_SHIFT_LABEL = f"shift{HEX_GRID_LAT_SHIFT_LAYERS}layer"
+HEX_COUNTS_CSV = OUT_DIR / f"china_sea_hex_counts_{AREA_LABEL}_{HEX_SIDE_LABEL}_{HEX_SHIFT_LABEL}.csv"
+HEX_COUNTS_PNG = OUT_DIR / f"china_sea_hex_counts_{AREA_LABEL}_{HEX_SIDE_LABEL}_{HEX_SHIFT_LABEL}.png"
 
 # If True, cells with zero records are labeled as 0. This is usually too dense for 1-degree grids.
 LABEL_ZERO_CELLS = False
@@ -43,9 +46,10 @@ def regular_hexagon(center_lon: float, center_lat: float, side_deg: float) -> Po
     return Polygon(coords)
 
 
-def generate_hex_grid(area_polygon: Polygon, side_deg: float) -> pd.DataFrame:
+def generate_hex_grid(area_polygon: Polygon, side_deg: float, lat_shift_layers: int = 0) -> pd.DataFrame:
     dx = 1.5 * side_deg
     dy = np.sqrt(3.0) * side_deg
+    lat_shift = lat_shift_layers * dy
 
     min_lon, min_lat, max_lon, max_lat = area_polygon.bounds
     centers = []
@@ -54,7 +58,7 @@ def generate_hex_grid(area_polygon: Polygon, side_deg: float) -> pd.DataFrame:
 
     while lon <= max_lon + 2 * side_deg:
         lat_offset = dy / 2.0 if col % 2 else 0.0
-        lat = min_lat - 2 * dy + lat_offset
+        lat = min_lat - 2 * dy + lat_offset + lat_shift
 
         while lat <= max_lat + 2 * dy:
             hexagon = regular_hexagon(lon, lat, side_deg)
@@ -118,18 +122,37 @@ def count_records_by_hex(records: pd.DataFrame, hexes: pd.DataFrame) -> pd.DataF
     return hexes
 
 
+def iter_polygons(geometry):
+    if geometry.is_empty:
+        return []
+    if geometry.geom_type == "Polygon":
+        return [geometry]
+    if geometry.geom_type == "MultiPolygon":
+        return list(geometry.geoms)
+    return []
+
+
 def save_hex_counts(hexes: pd.DataFrame) -> None:
     out = hexes.drop(columns="geometry").copy()
     out.to_csv(HEX_COUNTS_CSV, index=False, encoding="utf-8-sig")
 
 
-def plot_hex_counts(hexes: pd.DataFrame, land_union, records: pd.DataFrame) -> None:
+def plot_hex_counts(hexes: pd.DataFrame, land_union, ocean_area, records: pd.DataFrame) -> None:
     projection = ccrs.PlateCarree()
     fig = plt.figure(figsize=(13.5, 13.0))
     ax = plt.axes(projection=projection)
     ax.set_extent([LON_MIN, LON_MAX, LAT_MIN, LAT_MAX], crs=projection)
 
     ax.set_facecolor("white")
+
+    ax.add_geometries(
+        [land_union],
+        crs=projection,
+        facecolor="#b8b8a6",
+        edgecolor="#555555",
+        linewidth=0.35,
+        zorder=1,
+    )
 
     nonzero = hexes.loc[hexes["record_count"] > 0, "record_count"]
     if nonzero.empty:
@@ -138,34 +161,31 @@ def plot_hex_counts(hexes: pd.DataFrame, land_union, records: pd.DataFrame) -> N
         norm = mcolors.LogNorm(vmin=max(1, int(nonzero.min())), vmax=int(nonzero.max()))
     cmap = plt.get_cmap("turbo")
 
+    label_points = []
     for _, row in hexes.iterrows():
         count = int(row["record_count"])
         facecolor = "white" if count == 0 else cmap(norm(count))
-        patch = MplPolygon(
-            np.asarray(row.geometry.exterior.coords),
-            closed=True,
-            facecolor=facecolor,
-            edgecolor="black",
-            linewidth=0.55,
-            alpha=0.88 if count else 1.0,
-            transform=projection,
-            zorder=2,
-        )
-        ax.add_patch(patch)
+        plot_geometry = row.geometry.intersection(ocean_area)
+        label_point = plot_geometry.representative_point() if not plot_geometry.is_empty else row.geometry.centroid
+        label_points.append((label_point.x, label_point.y))
 
-    # Draw land on top so coastal hexagons visually follow the coastline.
-    ax.add_geometries(
-        [land_union],
-        crs=projection,
-        facecolor="#b8b8a6",
-        edgecolor="#555555",
-        linewidth=0.4,
-        zorder=3,
-    )
+        for polygon in iter_polygons(plot_geometry):
+            patch = MplPolygon(
+                np.asarray(polygon.exterior.coords),
+                closed=True,
+                facecolor=facecolor,
+                edgecolor="black",
+                linewidth=0.55,
+                alpha=0.88 if count else 1.0,
+                transform=projection,
+                zorder=2,
+            )
+            ax.add_patch(patch)
+
     ax.add_feature(cfeature.COASTLINE.with_scale("10m"), linewidth=0.45, edgecolor="#333333", zorder=4)
     ax.add_feature(cfeature.BORDERS.with_scale("10m"), linewidth=0.25, edgecolor="#777777", zorder=4)
 
-    for _, row in hexes.iterrows():
+    for (_, row), (label_lon, label_lat) in zip(hexes.iterrows(), label_points):
         count = int(row["record_count"])
         if count == 0 and not LABEL_ZERO_CELLS:
             continue
@@ -175,8 +195,8 @@ def plot_hex_counts(hexes: pd.DataFrame, land_union, records: pd.DataFrame) -> N
             label_color = "white" if norm(count) > 0.35 else "#222222"
 
         ax.text(
-            row["center_lon"],
-            row["center_lat"],
+            label_lon,
+            label_lat,
             str(count),
             ha="center",
             va="center",
@@ -203,7 +223,8 @@ def plot_hex_counts(hexes: pd.DataFrame, land_union, records: pd.DataFrame) -> N
         f"(side={HEX_SIDE_DEG:g} deg)"
     )
     subtitle = (
-        f"AREA=[42,103,13,130], {START_DATE:%Y-%m-%d} to {END_DATE:%Y-%m-%d}, "
+        f"AREA={AREA}, {START_DATE:%Y-%m-%d} to {END_DATE:%Y-%m-%d}, "
+        f"hex grid shifted up {HEX_GRID_LAT_SHIFT_LAYERS} layer(s), "
         f"valid wind direction/speed records: {len(records):,}"
     )
     ax.set_title(title, fontsize=15, pad=14)
@@ -225,12 +246,12 @@ def main() -> None:
     land_union = load_land_union(area_polygon)
     ocean_area = area_polygon.difference(land_union)
 
-    hexes = generate_hex_grid(area_polygon, HEX_SIDE_DEG)
+    hexes = generate_hex_grid(area_polygon, HEX_SIDE_DEG, HEX_GRID_LAT_SHIFT_LAYERS)
     hexes = hexes.loc[hexes["geometry"].map(lambda geom: geom.intersects(ocean_area))].copy()
     hexes = count_records_by_hex(records, hexes)
 
     save_hex_counts(hexes)
-    plot_hex_counts(hexes, land_union, records)
+    plot_hex_counts(hexes, land_union, ocean_area, records)
 
     print(f"Valid records: {len(records)}")
     print(f"Hexagons over ocean: {len(hexes)}")
