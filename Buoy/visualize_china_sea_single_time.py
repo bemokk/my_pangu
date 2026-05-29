@@ -8,11 +8,11 @@ from folium.plugins import FastMarkerCluster, Fullscreen, HeatMap, MarkerCluster
 
 ROOT_DIR = Path(__file__).resolve().parent / "icoads_202507"
 OUT_DIR = ROOT_DIR / "output"
-
+#13:0.25:42(117)  103:0.25:130  (109)
 AREA = [42, 103, 13, 130]
 LAT_MAX, LON_MIN, LAT_MIN, LON_MAX = AREA
 
-TARGET_DATETIME = pd.Timestamp("2025-07-01 12:00:00")
+TARGET_DATETIME = pd.Timestamp("2025-07-01 9:00:00")
 
 # True includes records within +/-30 minutes of TARGET_DATETIME.
 # False keeps only near-exact TARGET_DATETIME.
