@@ -1,5 +1,5 @@
 
-# data_dir = r"E:\pyCharmProject\pangu\model_output\gdas\2025-08-01-00-00to2025-08-08-00-00gdas_fnl"
+# data_dir = PROJECT_ROOT / "model_output" / "gdas" / "2025-08-01-00-00to2025-08-08-00-00gdas_fnl"
 
 
 import os
@@ -12,9 +12,11 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 import matplotlib.ticker as mticker
+from pathlib import Path
 
 # ================== 配置区 ==================
-data_dir = r"/model_input/single_time_point/era5\2025-08-01-00-00"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+data_dir = PROJECT_ROOT / "model_input" / "single_time_point" / "era5" / "2025-08-01-00-00"
 output_dir = None
 
 LAT_MIN, LAT_MAX = 0.0, 60.0

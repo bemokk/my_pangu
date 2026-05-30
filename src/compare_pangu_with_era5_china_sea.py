@@ -28,7 +28,7 @@ import xarray as xr
 # 1. 用户配置区：只需要改这里
 # ============================================================
 
-PROJECT_ROOT = Path(r"E:\PyCharm_WorkSpace\pangu")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # 可选："gdas" 或 "era5"
 DATA_TYPE = "era5"
@@ -224,13 +224,13 @@ def find_pred_file(pred_base: Path, model_forecast_hour: int, kind: str, valid_t
     查找预测文件。
 
     例如 ERA5 延迟场：
-    pred_base = E:/.../model_output/era5/2025-06-26-00-00
+    pred_base = PROJECT_ROOT / "model_output" / "era5" / "2025-06-26-00-00"
     model_forecast_hour = 121
     kind = surface
     valid_time_str = 2025-07-01-01-00
 
     优先查找：
-    E:/.../model_output/era5/2025-06-26-00-00/121/output_surface_2025-07-01-01-00.nc
+    PROJECT_ROOT / "model_output" / "era5" / "2025-06-26-00-00" / "121" / "output_surface_2025-07-01-01-00.nc"
     """
     filename = f"output_{kind}_{valid_time_str}.nc"
 

@@ -2,10 +2,12 @@ import os
 import numpy as np
 import onnx
 import onnxruntime as ort
+from pathlib import Path
 from datetime import datetime, timedelta
 from forecast_decode_functions import surface, upper
 # Use GPU or CPU
 use_GPU = False
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # The date and time of the initial field
 date_time = datetime(
@@ -30,33 +32,33 @@ gdas_data = False
 
 if gdas_data:
     final_result_dir = os.path.join(
-        os.path.join(os.getcwd(), "model_output/gdas"),
+        PROJECT_ROOT / "model_output" / "gdas",
         (date_time.strftime("%Y-%m-%d-%H-%M") + "to" + date_time_final.strftime("%Y-%m-%d-%H-%Mgdas_fnl"))
     )
 else:
     final_result_dir = os.path.join(
-        os.path.join(os.getcwd(), "model_output/era5"),
+        PROJECT_ROOT / "model_output" / "era5",
         (date_time.strftime("%Y-%m-%d-%H-%M") + "to" + date_time_final.strftime("%Y-%m-%d-%H-%M"))
     )
 if not os.path.exists(final_result_dir):
     os.makedirs(final_result_dir)
 
 
-model_24 = 'models/pangu_weather_24.onnx' # 24h
-model_6 = 'models/pangu_weather_6.onnx' # 6h
-model_3 = 'models/pangu_weather_3.onnx' # 3h
-model_1 = 'models/pangu_weather_1.onnx' # 1h
+model_24 = PROJECT_ROOT / "models" / "pangu_weather_24.onnx" # 24h
+model_6 = PROJECT_ROOT / "models" / "pangu_weather_6.onnx" # 6h
+model_3 = PROJECT_ROOT / "models" / "pangu_weather_3.onnx" # 3h
+model_1 = PROJECT_ROOT / "models" / "pangu_weather_1.onnx" # 1h
 
 
 if gdas_data:
     # The directory for forecasts
     forecast_dir = os.path.join(
-        os.path.join(os.getcwd(), "model_input/gdas"),
+        PROJECT_ROOT / "model_input" / "gdas",
         date_time.strftime("%Y-%m-%d-%H-%Mgdas_fnl")
     )
 else:
     forecast_dir = os.path.join(
-        os.path.join(os.getcwd(), "model_input/era5"),
+        PROJECT_ROOT / "model_input" / "era5",
         date_time.strftime("%Y-%m-%d-%H-%M")
     )
 
@@ -99,7 +101,7 @@ while time_difference_in_hour >= 1:
 
     if not jump:
         # Load the model
-        model = onnx.load(model_used)
+        model = onnx.load(str(model_used))
 
         # Set the behavier of onnxruntime
         options = ort.SessionOptions()
@@ -114,9 +116,9 @@ while time_difference_in_hour >= 1:
 
         # Initialize onnxruntime session for Pangu-Weather Models
         if use_GPU:
-            ort_session = ort.InferenceSession(model_used, sess_options=options, providers=[('CUDAExecutionProvider', cuda_provider_options)])
+            ort_session = ort.InferenceSession(str(model_used), sess_options=options, providers=[('CUDAExecutionProvider', cuda_provider_options)])
         else:
-            ort_session = ort.InferenceSession(model_used, sess_options=options, providers=['CPUExecutionProvider'])
+            ort_session = ort.InferenceSession(str(model_used), sess_options=options, providers=['CPUExecutionProvider'])
 
     print("start")
     # Load the upper-air numpy arrays

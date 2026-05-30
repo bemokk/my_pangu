@@ -1,10 +1,13 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 # ================= 配置区域 =================
-GDAS_PATH = r"/src/monthly_result/2018-07/Monthly_Avg_Surface_GDAS.csv"
-ERA5_PATH = r"/src/monthly_result/2018-07/Monthly_Avg_Surface_ERA5.csv"
+GDAS_PATH = PROJECT_ROOT / "src" / "monthly_result" / "2018-07" / "Monthly_Avg_Surface_GDAS.csv"
+ERA5_PATH = PROJECT_ROOT / "src" / "monthly_result" / "2018-07" / "Monthly_Avg_Surface_ERA5.csv"
 
 # 提取的最大预报时效
 MAX_HOUR = 24
@@ -76,7 +79,7 @@ ax2.set_xlim(0, 25)
 plt.subplots_adjust(hspace=0.1)
 
 # ================= 保存与显示 =================
-output_path = r"/src/monthly_result/2018-07/Fig3_3_Background.png"
+output_path = PROJECT_ROOT / "src" / "monthly_result" / "2018-07" / "Fig3_3_Background.png"
 # bbox_inches='tight' 可确保保存时边缘不被裁剪
 plt.savefig(output_path, format='png', bbox_inches='tight', dpi=600)
 print(f"背景图谱已成功生成并保存至: {output_path}")

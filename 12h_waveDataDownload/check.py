@@ -5,6 +5,8 @@ import xarray as xr
 import numpy as np
 from pathlib import Path
 
+BASE_DIR = Path(__file__).resolve().parent
+
 def inspect_nc_resolution(file_path: str):
     path = Path(file_path)
     if not path.exists():
@@ -55,6 +57,6 @@ def inspect_nc_resolution(file_path: str):
 
 
 if __name__ == "__main__":
-    test_file = r"E:\pyCharmProject\pangu\12h_waveDataDownload\unified_wave_data\unified_wind_wave_2026032812_12h.nc"
+    test_file = BASE_DIR / "unified_wave_data" / "unified_wind_wave_2026032812_12h.nc"
 
     inspect_nc_resolution(test_file)

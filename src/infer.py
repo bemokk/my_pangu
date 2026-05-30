@@ -2,11 +2,13 @@ import os
 import numpy as np
 import torch
 import onnxruntime as ort
+from pathlib import Path
 from datetime import datetime, timedelta
 from forecast_decode_functions import surface, upper
 
 
 use_GPU = True
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def create_ort_session(model_path, options):
@@ -24,6 +26,8 @@ def create_ort_session(model_path, options):
     #     print("Torch GPU device:", torch.cuda.get_device_name(0))
     # else:
     #     print("Warning: PyTorch 当前无法使用 CUDA。ONNX Runtime 也很可能无法使用 GPU。")
+
+    model_path = str(model_path)
 
     if not torch.cuda.is_available():
         print("Warning: PyTorch 当前无法使用 CUDA。")
@@ -90,17 +94,17 @@ def infer(start_time, forecast_hour, dataType):
         use_gdas_data = False
 
     if use_gdas_data:
-        input_root = os.path.join(os.getcwd(), "../model_input/single_time_point/gdas")
-        input_dir = os.path.join(input_root, base_time_str)
-        output_root = os.path.join(os.getcwd(), "../model_output/gdas")
+        input_root = PROJECT_ROOT / "model_input" / "single_time_point" / "gdas"
+        input_dir = input_root / base_time_str
+        output_root = PROJECT_ROOT / "model_output" / "gdas"
     else:
-        input_root = os.path.join(os.getcwd(), "../model_input/single_time_point/era5")
-        input_dir = os.path.join(input_root, base_time_str)
-        output_root = os.path.join(os.getcwd(), "../model_output/era5")
+        input_root = PROJECT_ROOT / "model_input" / "single_time_point" / "era5"
+        input_dir = input_root / base_time_str
+        output_root = PROJECT_ROOT / "model_output" / "era5"
 
     # cache_dir 是时间链推理缓存目录
-    cache_dir = os.path.join(output_root, base_time_str, "timeline_cache")
-    target_dir = os.path.join(output_root, base_time_str, str(forecast_hour))
+    cache_dir = output_root / base_time_str / "timeline_cache"
+    target_dir = output_root / base_time_str / str(forecast_hour)
 
     if not os.path.exists(input_dir):
         print(f"Error: Input dir doesn't exist: {input_dir}")
@@ -113,10 +117,10 @@ def infer(start_time, forecast_hour, dataType):
         os.makedirs(target_dir)
 
     model_paths = {
-        24: "../models/pangu_weather_24.onnx",
-        6: "../models/pangu_weather_6.onnx",
-        3: "../models/pangu_weather_3.onnx",
-        1: "../models/pangu_weather_1.onnx"
+        24: PROJECT_ROOT / "models" / "pangu_weather_24.onnx",
+        6: PROJECT_ROOT / "models" / "pangu_weather_6.onnx",
+        3: PROJECT_ROOT / "models" / "pangu_weather_3.onnx",
+        1: PROJECT_ROOT / "models" / "pangu_weather_1.onnx",
     }
 
     # 2. 推理循环

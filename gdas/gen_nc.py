@@ -1,17 +1,20 @@
 import os
 import sys
 import subprocess
+from pathlib import Path
 from datetime import datetime, timedelta
 
 # Python 解释器，使用当前 conda 环境中的 python
 python_exe = sys.executable
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_DIR = Path(__file__).resolve().parent
 
 # GRIB2 文件所在目录
-grib_dir = r"E:\PyCharm_WorkSpace\pangu\gdas\grib2\fnl"
+grib_dir = PROJECT_ROOT / "gdas" / "grib2" / "fnl"
 
 # 两个转换脚本路径
-surface_script = r"E:\PyCharm_WorkSpace\pangu\gdas\select_surface_variables.py"
-upper_script = r"E:\PyCharm_WorkSpace\pangu\gdas\select_upper_variables.py"
+surface_script = SCRIPT_DIR / "select_surface_variables.py"
+upper_script = SCRIPT_DIR / "select_upper_variables.py"
 
 # 日期范围：2025年7月1日 至 2025年7月30日
 start_date = datetime(2025, 7, 31)
@@ -26,8 +29,7 @@ missing_files = []
 while current_date <= end_date:
     date_str = current_date.strftime("%Y%m%d")
 
-    grib_file = os.path.join(
-        grib_dir,
+    grib_file = grib_dir / (
         f"gdas1.fnl0p25.{date_str}00.f00.grib2"
     )
 
@@ -46,9 +48,9 @@ while current_date <= end_date:
         subprocess.run(
             [
                 python_exe,
-                surface_script,
+                str(surface_script),
                 "--grib_file",
-                grib_file
+                str(grib_file)
             ],
             check=True
         )
@@ -57,9 +59,9 @@ while current_date <= end_date:
         subprocess.run(
             [
                 python_exe,
-                upper_script,
+                str(upper_script),
                 "--grib_file",
-                grib_file
+                str(grib_file)
             ],
             check=True
         )

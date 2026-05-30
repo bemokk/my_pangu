@@ -8,8 +8,9 @@ from folium.plugins import MarkerCluster
 # ============================================================
 # 1. 路径与参数设置
 # ============================================================
-NC_DIR = Path(r"E:\PyCharm_WorkSpace\pangu\Buoy\icoads_202507\nc")
-OUT_DIR = Path(r"E:\PyCharm_WorkSpace\pangu\Buoy\icoads_202507\output")
+ROOT_DIR = Path(__file__).resolve().parent / "icoads_202507"
+NC_DIR = ROOT_DIR / "nc"
+OUT_DIR = ROOT_DIR / "output"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # 中国近海范围，可根据你的研究区修改

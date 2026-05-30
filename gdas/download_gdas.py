@@ -5,8 +5,10 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from tqdm import tqdm
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 # 保存目录
-OUT_DIR = Path(r"E:\GDAS\202507_00UTC")
+OUT_DIR = PROJECT_ROOT / "gdas" / "grib2" / "fnl"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # GDEX HTTPS 下载地址模板

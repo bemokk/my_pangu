@@ -3,6 +3,9 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import numpy as np
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def crop_to_china_sea(ds, lat_max=42, lon_min=103, lat_min=13, lon_max=130):
@@ -140,9 +143,9 @@ if __name__ == "__main__":
     V_MIN = -5.0
     V_MAX = 5.0
 
-    GDAS_T24_PATH = r"/model_output/gdas/2018-07-01-00-00/24/output_surface_2018-07-02-00-00.nc"
-    ERA5_T24_PATH = r"/src/trash/nc_data\era5\2018-07-01-00-00\24\surface.nc"
-    OUT_B_PATH = r"/src/figure/old/Fig3_3c_T24_Diff.png"
+    GDAS_T24_PATH = PROJECT_ROOT / "model_output" / "gdas" / "2018-07-01-00-00" / "24" / "output_surface_2018-07-02-00-00.nc"
+    ERA5_T24_PATH = PROJECT_ROOT / "src" / "trash" / "nc_data" / "era5" / "2018-07-01-00-00" / "24" / "surface.nc"
+    OUT_B_PATH = PROJECT_ROOT / "src" / "figure" / "old" / "Fig3_3c_T24_Diff.png"
 
     plot_spatial_diff_map(
         gdas_nc_path=GDAS_T24_PATH,
@@ -260,9 +263,9 @@ if __name__ == "__main__":
 #
 #     # --- 绘制图 3-3 (b) : 初始时刻 (T=0) 的域偏移 ---
 #     # 根据您提供的路径
-#     # GDAS_T0_PATH = r"E:\pyCharmProject\pangu\model_input\single_time_point\gdas\2018-07-01-00-00\surface.nc"
-#     # ERA5_T0_PATH = r"E:\pyCharmProject\pangu\model_input\single_time_point\era5\2018-07-01-00-00\surface.nc"
-#     # OUT_B_PATH = r"E:\pyCharmProject\pangu\src\figure\Fig3_3b_T0_Diff.png"
+#     # GDAS_T0_PATH = PROJECT_ROOT / "model_input" / "single_time_point" / "gdas" / "2018-07-01-00-00" / "surface.nc"
+#     # ERA5_T0_PATH = PROJECT_ROOT / "model_input" / "single_time_point" / "era5" / "2018-07-01-00-00" / "surface.nc"
+#     # OUT_B_PATH = PROJECT_ROOT / "src" / "figure" / "Fig3_3b_T0_Diff.png"
 #     #
 #     # plot_spatial_diff_map(
 #     #     gdas_nc_path=GDAS_T0_PATH,
@@ -278,9 +281,9 @@ if __name__ == "__main__":
 #     # 取消下面代码的注释并修改路径即可：
 #
 #
-#     GDAS_T6_PATH = r"E:\pyCharmProject\pangu\model_output\gdas\2018-07-01-00-00\6\output_surface_2018-07-01-06-00.nc"
-#     ERA5_T6_PATH = r"E:\pyCharmProject\pangu\src\nc_data\era5\2018-07-01-00-00\6\surface.nc"
-#     OUT_C_PATH = r"E:\pyCharmProject\pangu\src\figure\Fig3_3c_T6_Diff.png"
+#     GDAS_T6_PATH = PROJECT_ROOT / "model_output" / "gdas" / "2018-07-01-00-00" / "6" / "output_surface_2018-07-01-06-00.nc"
+#     ERA5_T6_PATH = PROJECT_ROOT / "src" / "nc_data" / "era5" / "2018-07-01-00-00" / "6" / "surface.nc"
+#     OUT_C_PATH = PROJECT_ROOT / "src" / "figure" / "Fig3_3c_T6_Diff.png"
 #
 #     plot_spatial_diff_map(
 #         gdas_nc_path=GDAS_T6_PATH,

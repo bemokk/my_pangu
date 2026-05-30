@@ -23,7 +23,7 @@ TARGET_HOURS = np.array([0, 1, 3, 6, 12], dtype=float)
 exact_hour = True
 time_tolerance = 0.01 if exact_hour else 0.5
 
-ROOT_DIR = Path(r"/Buoy/icoads_202507")
+ROOT_DIR = Path(__file__).resolve().parent / "icoads_202507"
 NC_DIR = ROOT_DIR / "nc"
 OUT_DIR = ROOT_DIR / "output"
 NC_DIR.mkdir(parents=True, exist_ok=True)

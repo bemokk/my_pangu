@@ -28,15 +28,20 @@ import numpy as np
 import pandas as pd
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
 # ============================================================
 # 1. 用户配置区：只需要改这里
 # ============================================================
 
 # 整月统计结果 CSV
 INPUT_CSV = Path(
-    r"E:\PyCharm_WorkSpace\pangu\src\comparison_results"
-    r"\batch_gdas_2025070100_2025073100_china_sea"
-    r"\batch_all_metrics_china_sea.csv"
+    PROJECT_ROOT
+    / "src"
+    / "comparison_results"
+    / "batch_gdas_2025070100_2025073100_china_sea"
+    / "batch_all_metrics_china_sea.csv"
 )
 
 # 输出目录

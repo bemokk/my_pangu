@@ -44,7 +44,7 @@ except Exception:
 # 1. 用户配置区
 # ============================================================
 
-PROJECT_ROOT = Path(r"/")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # 目标起报时间：用于分析 2025-07-17 之后连续72h路径
 TARGET_START_TIME = "2025-07-17-00-00"
@@ -98,7 +98,7 @@ SHOW_FIG = True
 # 陆地边界文件
 # ------------------------------------------------------------
 # 如果你有自己的 shp 文件，可以填写路径，例如：
-LAND_BOUNDARY_FILE = r"/src/ne_10m_land/ne_10m_land.shp"
+LAND_BOUNDARY_FILE = PROJECT_ROOT / "src" / "ne_10m_land.zip"
 # 如果为 None，程序会优先尝试 cartopy 的 Natural Earth 数据；
 # 如果失败，再尝试 geopandas 自带数据；
 # 如果仍失败，则跳过陆地背景。

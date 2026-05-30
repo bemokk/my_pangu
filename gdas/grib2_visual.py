@@ -4,9 +4,12 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # 打开GRIB2文件
-grb_file = pygrib.open(r'E:\pyCharmProject\pangu\gdas\grib2\fnl\gdas1.fnl0p25.2025072900.f00.grib2')  # 替换为你的文件名
+grb_file = pygrib.open(str(PROJECT_ROOT / "gdas" / "grib2" / "fnl" / "gdas1.fnl0p25.2025072900.f00.grib2"))  # 替换为你的文件名
 
 # 方法1：根据索引选择第11条记录
 u_wind = grb_file.message(580)  # 索引从1开始

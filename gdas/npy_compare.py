@@ -1,7 +1,7 @@
 # import numpy as np
 #
-# a = np.load(r"E:\pyCharmProject\pangu\model_input\2025-08-01-00-00\input_surface.npy")  # shape (4, 721, 1440)
-# b = np.load(r"E:\pyCharmProject\pangu\model_input\2025-08-01-00-00\input_surface.npy")
+# a = np.load(PROJECT_ROOT / "model_input" / "2025-08-01-00-00" / "input_surface.npy")  # shape (4, 721, 1440)
+# b = np.load(PROJECT_ROOT / "model_input" / "2025-08-01-00-00" / "input_surface.npy")
 #
 # # 展平成一维
 # a_flat = a.reshape(-1)
@@ -12,10 +12,12 @@
 import numpy as np
 import pandas as pd
 import os
+from pathlib import Path
 
-path_a = r"E:\pyCharmProject\pangu\gdas\nc\processed\2018102300\input_upper.npy"
-path_b = r"/model_input/single_time_point/era5\2018-10-23-00-00\input_upper.npy"
-out_dir = r"E:\pyCharmProject\pangu\compare_output"  # 输出目录（会创建）
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+path_a = PROJECT_ROOT / "gdas" / "nc" / "processed" / "2018102300" / "input_upper.npy"
+path_b = PROJECT_ROOT / "model_input" / "single_time_point" / "era5" / "2018-10-23-00-00" / "input_upper.npy"
+out_dir = PROJECT_ROOT / "compare_output"  # 输出目录（会创建）
 os.makedirs(out_dir, exist_ok=True)
 
 a = np.load(path_a)

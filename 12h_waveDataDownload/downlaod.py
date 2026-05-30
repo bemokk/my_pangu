@@ -12,7 +12,7 @@ AREA_BBOX = [41, 105, 0, 135]  # 中国海域 [北纬, 西经, 南纬, 东经]
 UNIFIED_VARS = ['u10', 'v10', 'swh', 'mwp', 'mwd']  # 统一的标准变量名 u10 v10 波高 周期 波向
 
 # === 目录结构配置 ===
-BASE_DIR = Path(r"E:\pyCharmProject\pangu\12h_waveDataDownload")
+BASE_DIR = Path(__file__).resolve().parent
 
 ERA5_RAW_DIR = BASE_DIR / "raw_data" / "era5"
 GDAS_RAW_DIR = BASE_DIR / "raw_data" / "gdas"

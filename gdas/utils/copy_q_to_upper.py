@@ -12,7 +12,7 @@
 # import netCDF4 as nc
 #
 # # ========== 用户配置 ==========
-# b_path = r"/model_input\2018-09-11-00-00\upper.nc"  # 源文件（包含 q）
+# b_path = PROJECT_ROOT / "model_input" / "2018-09-11-00-00" / "upper.nc"  # 源文件（包含 q）
 # upper_path = "nc/处理后/upper.nc"  # 目标 upper.nc
 # varname = "q"                 # 源变量名（b.nc 中）
 # overwrite_if_exists = True    # 如果 upper.nc 中已有 q，是否覆盖
@@ -175,7 +175,7 @@
 #     print("完成：已将 q 从 b.nc 写入到 upper.nc。")
 #
 #     upper_data = np.zeros((5, 13, 721, 1440), dtype=np.float32)
-#     with nc.Dataset(r"/gdas/nc/处理后/upper.nc") as nc_file:
+#     with nc.Dataset(PROJECT_ROOT / "gdas" / "nc" / "处理后" / "upper.nc") as nc_file:
 #         upper_data[0] = nc_file.variables['z'][:].astype(np.float32)
 #         upper_data[1] = nc_file.variables['q'][:].astype(np.float32)
 #         upper_data[2] = nc_file.variables['t'][:].astype(np.float32)

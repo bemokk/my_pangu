@@ -1,7 +1,10 @@
 import netCDF4 as nc
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # 打开nc文件
-file = nc.Dataset(r'/gdas/nc/处理后/2025072900/upper.nc', 'r')
+file = nc.Dataset(str(PROJECT_ROOT / "gdas" / "nc" / "处理后" / "2025072900" / "upper.nc"), 'r')
 
 # 获取pressure_level变量
 pressure_levels = file.variables['pressure_level']

@@ -1,5 +1,6 @@
 import xarray as xr
 import numpy as np
+from pathlib import Path
 
 def similarity_nrmse(a, b):
     """
@@ -47,8 +48,9 @@ def compare_nc_similarity(nc1_path, nc2_path, variables):
 
 
 if __name__ == "__main__":
-    nc_gdas = r"E:\pyCharmProject\pangu\model_input\gdas_fnl\2025-08-01-00-00gdas_fnl\surface.nc"
-    nc_ecmwf = r"E:\pyCharmProject\pangu\model_input\era5\2025-08-01-00-00\surface.nc"
+    PROJECT_ROOT = Path(__file__).resolve().parents[1]
+    nc_gdas = PROJECT_ROOT / "model_input" / "gdas_fnl" / "2025-08-01-00-00gdas_fnl" / "surface.nc"
+    nc_ecmwf = PROJECT_ROOT / "model_input" / "era5" / "2025-08-01-00-00" / "surface.nc"
 
     variables = ["u10", "v10", "t2m", "msl"]
 
@@ -58,7 +60,7 @@ if __name__ == "__main__":
         print(f"{k:5s} 相似度：{v:.2f}%")
 
 '''
-(pangu) PS E:\pyCharmProject\pangu> ncdump -h E:\pyCharmProject\pangu\gdas\surface.nc                                
+(pangu) PS <project-root>> ncdump -h .\gdas\surface.nc
 netcdf surface {
 dimensions:
         time = UNLIMITED ; // (1 currently)

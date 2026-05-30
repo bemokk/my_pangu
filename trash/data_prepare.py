@@ -2,9 +2,11 @@ import cdsapi
 import numpy as np
 import netCDF4 as nc
 import os
+from pathlib import Path
 from datetime import datetime
 
 c = cdsapi.Client()
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 #下载下面时间的ear5数据
 date_time = datetime(
@@ -16,7 +18,7 @@ date_time = datetime(
 
 #源数据存放路径
 cdsdata_dir = os.path.join(
-    os.path.join(os.getcwd(), "model_input/single_time_point/era5"),
+    PROJECT_ROOT / "model_input" / "single_time_point" / "era5",
     date_time.strftime("%Y-%m-%d-%H-%M"),
 )
 if not os.path.exists(cdsdata_dir):

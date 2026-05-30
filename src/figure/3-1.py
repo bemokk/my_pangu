@@ -15,16 +15,19 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+FIGURE_DIR = Path(__file__).resolve().parent
+
 # ============================================================
 # 1. 用户配置区
 # ============================================================
 
 # 你的两个输入文件
-GDAS_CSV = Path(r"E:\pyCharmProject\pangu\src\comparison_results\gdas_monthly_by_lead_variable.csv")
-ERA5_CSV = Path(r"E:\pyCharmProject\pangu\src\comparison_results\era5_monthly_by_lead_variable.csv")
+GDAS_CSV = PROJECT_ROOT / "src" / "comparison_results" / "gdas_monthly_by_lead_variable.csv"
+ERA5_CSV = PROJECT_ROOT / "src" / "comparison_results" / "era5_monthly_by_lead_variable.csv"
 
 # 输出目录
-OUT_DIR = Path(r"./figure3_1_output")
+OUT_DIR = FIGURE_DIR / "figure3_1_output"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # 要绘制的变量

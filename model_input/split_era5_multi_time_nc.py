@@ -13,12 +13,13 @@ import xarray as xr
 
 # 你打包下载的 ERA5 nc 文件所在文件夹
 # 这个文件夹里可以有多个 nc 文件，有些是 surface，有些是 upper
-INPUT_NC_DIR = "multi_time_point"
+MODEL_INPUT_DIR = Path(__file__).resolve().parent
+INPUT_NC_DIR = MODEL_INPUT_DIR / "multi_time_point"
 
 # 拆分后的输出路径
 # 会自动生成：
-# E:\PyCharm_WorkSpace\pangu\model_input\single_time_point\era5\2025-07-01-00-00
-OUTPUT_BASE_DIR = "single_time_point\era5"
+# model_input/single_time_point/era5/2025-07-01-00-00
+OUTPUT_BASE_DIR = MODEL_INPUT_DIR / "single_time_point" / "era5"
 
 # 是否覆盖已有的 surface.nc / upper.nc / npy 文件
 OVERWRITE = True

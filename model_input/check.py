@@ -1,8 +1,11 @@
 import numpy as np
 import xarray as xr
+from pathlib import Path
 
-nc_path = r"/model_input/single_time_point/era5/2025-07-01-00-00/surface.nc"
-npy_path = r"/model_input/single_time_point/era5/2025-07-01-00-00/input_surface.npy"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+case_dir = PROJECT_ROOT / "model_input" / "single_time_point" / "era5" / "2025-07-01-00-00"
+nc_path = case_dir / "surface.nc"
+npy_path = case_dir / "input_surface.npy"
 
 ds = xr.open_dataset(nc_path)
 arr = np.load(npy_path)

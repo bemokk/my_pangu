@@ -35,6 +35,8 @@ except Exception:
 # 1. 用户配置区
 # ============================================================
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 # -----------------------------
 # 图形布局，可选 "1x3" 或 "3x1"
 # -----------------------------
@@ -50,21 +52,21 @@ AREA = [30, 105, 10, 130]
 # T+24 h 对应的三个文件
 # -----------------------------
 ERA5_FILE = Path(
-    r"/model_input/single_time_point/era5/2025-07-18-00-00/surface.nc"
+    PROJECT_ROOT / "model_input" / "single_time_point" / "era5" / "2025-07-18-00-00" / "surface.nc"
 )
 
 GDAS_FILE = Path(
-    r"/model_output/gdas/2025-07-17-00-00/24/output_surface_2025-07-18-00-00.nc"
+    PROJECT_ROOT / "model_output" / "gdas" / "2025-07-17-00-00" / "24" / "output_surface_2025-07-18-00-00.nc"
 )
 
 ERA5_LAGGED_FILE = Path(
-    r"/model_output/era5/2025-07-12-00-00/144/output_surface_2025-07-18-00-00.nc"
+    PROJECT_ROOT / "model_output" / "era5" / "2025-07-12-00-00" / "144" / "output_surface_2025-07-18-00-00.nc"
 )
 
 # -----------------------------
 # 输出目录
 # -----------------------------
-OUT_DIR = Path(r"/src/comparison_results/chapter3_figures")
+OUT_DIR = PROJECT_ROOT / "src" / "comparison_results" / "chapter3_figures"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # -----------------------------
@@ -73,7 +75,7 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 # -----------------------------
 LAND_BOUNDARY_FILE = None
 # 例如：
-# LAND_BOUNDARY_FILE = r"E:\PyCharm_WorkSpace\pangu\src\naturalearth\ne_10m_land.shp"
+# LAND_BOUNDARY_FILE = PROJECT_ROOT / "src" / "ne_10m_land.zip"
 
 # 是否显示图
 SHOW_FIG = True

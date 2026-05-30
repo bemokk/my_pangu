@@ -14,20 +14,25 @@ import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # ============================================================
 # 1. 用户配置区
 # ============================================================
 
 ERA5_SURFACE_FILE = Path(
-    r"E:\PyCharm_WorkSpace\pangu\model_input\single_time_point\era5"
-    r"\2025-07-17-00-00\surface.nc"
+    PROJECT_ROOT
+    / "model_input"
+    / "single_time_point"
+    / "era5"
+    / "2025-07-17-00-00"
+    / "surface.nc"
 )
 
 # 中国海区域：lat_max, lon_min, lat_min, lon_max
 AREA = [42, 103, 13, 130]
 
-OUT_DIR = Path(r"E:\PyCharm_WorkSpace\pangu\src\comparison_results\era5_surface_visual")
+OUT_DIR = PROJECT_ROOT / "src" / "comparison_results" / "era5_surface_visual"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 

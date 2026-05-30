@@ -3,19 +3,27 @@ import numpy as np
 import xarray as xr
 import netCDF4 as nc
 import os
+from pathlib import Path
 
-grib_file = r"E:\pyCharmProject\pangu\gdas\grib2\fnl\gdas1.fnl0p25.2018073000.f00.grib2"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+grib_file = PROJECT_ROOT / "gdas" / "grib2" / "fnl" / "gdas1.fnl0p25.2018073000.f00.grib2"
 ENABLE_COPY_Q = True
 
 # --- 新增：存储多个日期的 q 变量的 NetCDF 文件路径 ---
-MULTI_Q_NC_FILE = r"E:\pyCharmProject\pangu\model_input\multiple_time_point\era5\q_2018-07-01-05-10-15-20-25-30.nc"  # 请替换为实际的路径
+MULTI_Q_NC_FILE = (
+    PROJECT_ROOT
+    / "model_input"
+    / "multiple_time_point"
+    / "era5"
+    / "q_2018-07-01-05-10-15-20-25-30.nc"
+)  # 请替换为实际的路径
 
 # 从 GRIB 文件名解析时间
-time_str_raw = grib_file.split(".")[-3]  # "2018030700"
+time_str_raw = grib_file.name.split(".")[-3]  # "2018030700"
 
 # 构建用于保存目录的字符串格式: YYYY-MM-DD-HH-00
 dir_time_str = f"{time_str_raw[0:4]}-{time_str_raw[4:6]}-{time_str_raw[6:8]}-{time_str_raw[8:10]}-00"
-dir_path = os.path.join(r"/model_input/single_time_point/gdas", dir_time_str)
+dir_path = PROJECT_ROOT / "model_input" / "single_time_point" / "gdas" / dir_time_str
 
 # 构建标准的 ISO 时间格式用于 xarray 的 time 选择: YYYY-MM-DDTHH:00:00
 target_time_iso = f"{time_str_raw[0:4]}-{time_str_raw[4:6]}-{time_str_raw[6:8]}T{time_str_raw[8:10]}:00:00"

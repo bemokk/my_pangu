@@ -1,7 +1,7 @@
 # # import pygrib
 # #
 # # # 打开文件
-# # grb_file = pygrib.open(r'E:\pyCharmProject\pangu\gdas\grib2\fnl\gdas1.fnl0p25.2018102300.f00.grib2')
+# # grb_file = pygrib.open(PROJECT_ROOT / "gdas" / "grib2" / "fnl" / "gdas1.fnl0p25.2018102300.f00.grib2")
 # #
 # # # 打印文件基本信息
 # # print(f"文件中共有 {grb_file.messages} 条记录")
@@ -27,7 +27,7 @@
 #
 # import pygrib
 #
-# grbs = pygrib.open(r"E:\pyCharmProject\pangu\model_input\multiple_time_point\era5\q_2018-07-01-05-10-15-20-25-30.nc")
+# grbs = pygrib.open(PROJECT_ROOT / "model_input" / "multiple_time_point" / "era5" / "q_2018-07-01-05-10-15-20-25-30.nc")
 #
 # pressure_levels = ['1000', '925', '850', '700', '600', '500', '400', '300', '250', '200', '150', '100', '50']
 # pressure_levels = [int(i) for i in pressure_levels]
@@ -59,11 +59,20 @@
 #             #满足条件的写入upper.nc，按照
 #
 # print(j)
+from pathlib import Path
+
 import netCDF4 as nc
 
-nc_file = r"E:\pyCharmProject\pangu\model_input\multiple_time_point\era5\q_2018-07-01-05-10-15-20-25-30.nc"  # 替换为你的文件路径
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+nc_file = (
+    PROJECT_ROOT
+    / "model_input"
+    / "multiple_time_point"
+    / "era5"
+    / "q_2018-07-01-05-10-15-20-25-30.nc"
+)  # 替换为你的文件路径
 
-with nc.Dataset(nc_file) as f:
+with nc.Dataset(str(nc_file)) as f:
     # 查看所有维度的名称和大小
     print("文件维度信息：")
     for dim_name, dim_obj in f.dimensions.items():

@@ -2,13 +2,15 @@ import xarray as xr
 import numpy as np
 import pandas as pd
 import os
+from pathlib import Path
 
 # -------------------------- 配置 --------------------------
-nc_gdas = r"E:\pyCharmProject\pangu\gdas\nc\processed\2018102300\upper.nc"
-nc_ecmwf = "../model_input/era5/2018-10-23-00-00/upper.nc"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+nc_gdas = PROJECT_ROOT / "gdas" / "nc" / "processed" / "2018102300" / "upper.nc"
+nc_ecmwf = PROJECT_ROOT / "model_input" / "era5" / "2018-10-23-00-00" / "upper.nc"
 
 variables = ["z", "q", "t", "u", "v"]                 # 要比较的变量
-time = nc_ecmwf.split("/")[-2]
+time = nc_ecmwf.parent.name
 out_csv = time+"upper_compare_by_level.csv"
 
 coord_round = 5   # 坐标取交集时的四舍五入小数位

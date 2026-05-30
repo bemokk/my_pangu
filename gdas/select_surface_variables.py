@@ -4,6 +4,7 @@ import numpy as np
 import xarray as xr
 import netCDF4 as nc
 import argparse
+from pathlib import Path
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--grib_file", required=True, help="输入 GRIB2 文件路径")
@@ -14,9 +15,9 @@ grib_file = args.grib_file
 time = os.path.basename(grib_file).split(".")[-3]
 time_str = time[0:4] + "-" + time[4:6] + "-" + time[6:8] + "-" + time[8:10] + "-00"
 
-# 建议使用 Windows 绝对路径，不要用 /model_input
-base_dir = r"E:\PyCharm_WorkSpace\pangu\model_input\single_time_point\gdas"
-dir_path = os.path.join(base_dir, time_str)
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+base_dir = PROJECT_ROOT / "model_input" / "single_time_point" / "gdas"
+dir_path = base_dir / time_str
 
 os.makedirs(dir_path, exist_ok=True)
 
