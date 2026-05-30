@@ -14,7 +14,7 @@ from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 import matplotlib.ticker as mticker
 
 # ================== 配置区 ==================
-data_dir = r"../model_input/single_time_point/era5/2025-08-01-00-00"
+data_dir = r"/model_input/single_time_point/era5\2025-08-01-00-00"
 output_dir = None
 
 LAT_MIN, LAT_MAX = 0.0, 60.0

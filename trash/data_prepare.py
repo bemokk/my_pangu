@@ -1,42 +1,3 @@
-# import cdsapi
-#
-# dataset = "reanalysis-era5-pressure-levels"
-# request = {
-#     "product_type": ["reanalysis"],
-#     "variable": [
-#         "geopotential",
-#         "specific_humidity",
-#         "temperature",
-#         "u_component_of_wind",
-#         "v_component_of_wind"
-#     ],
-#     "year": ["2025"],
-#     "month": ["06", "08"],
-#     "day": [
-#         "01", "02", "03",
-#         "26", "27",
-#         "28", "29", "30"
-#     ],
-#     "time": [
-#         "00:00", "01:00", "03:00",
-#         "06:00", "12:00"
-#     ],
-#     "pressure_level": [
-#         "50", "100", "150",
-#         "200", "250", "300",
-#         "400", "500", "600",
-#         "700", "850", "925",
-#         "1000"
-#     ],
-#     "data_format": "netcdf",
-#     "download_format": "unarchived"
-# }
-#
-# client = cdsapi.Client()
-# client.retrieve(dataset, request).download()
-
-
-
 import cdsapi
 import numpy as np
 import netCDF4 as nc
@@ -49,7 +10,7 @@ c = cdsapi.Client()
 date_time = datetime(
     year=2025,
     month=7,
-    day=17,
+    day=26,
     hour=0,
     minute=0)
 

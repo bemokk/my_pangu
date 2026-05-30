@@ -10,22 +10,20 @@ from urllib.parse import urljoin
 # ============================================================
 # 1. 参数设置
 # ============================================================
-BASE_URL_TEMPLATE = "https://www.ncei.noaa.gov/data/international-comprehensive-ocean-atmosphere/v3/archive/nrt/daily/{year}/{month:02d}/"
-START_DATE = pd.Timestamp("2025-07-01")
-END_DATE = pd.Timestamp("2025-08-04")
+BASE_URL = "https://www.ncei.noaa.gov/data/international-comprehensive-ocean-atmosphere/v3/archive/nrt/daily/2025/07/"
 
 # 中国近海范围，可根据论文或你的Pangu研究区调整
 LON_MIN, LON_MAX = 103, 130
 LAT_MIN, LAT_MAX = 13, 42
 
 # 需要的UTC时次
-TARGET_HOURS = np.array([0, 3, 6, 9, 12, 15, 18, 21], dtype=float)
+TARGET_HOURS = np.array([0, 1, 3, 6, 12], dtype=float)
 
 # True：严格匹配整点；False：允许±30分钟
 exact_hour = True
 time_tolerance = 0.01 if exact_hour else 0.5
 
-ROOT_DIR = Path(__file__).resolve().parent / "icoads_202507"
+ROOT_DIR = Path(r"/Buoy/icoads_202507")
 NC_DIR = ROOT_DIR / "nc"
 OUT_DIR = ROOT_DIR / "output"
 NC_DIR.mkdir(parents=True, exist_ok=True)
@@ -110,41 +108,27 @@ def download_nc(url, local_path, max_retry=3):
 
 
 # ============================================================
-# 3. 获取指定日期范围内每日 daily_updated NetCDF 文件列表
+# 3. 获取2025年7月每日 daily_updated NetCDF 文件列表
 # ============================================================
-def iter_month_urls(start_date, end_date):
-    months = pd.period_range(start_date, end_date, freq="M")
-    for month in months:
-        yield BASE_URL_TEMPLATE.format(year=month.year, month=month.month)
+html = requests.get(BASE_URL, headers=HEADERS, timeout=60).text
 
-
-nc_files = []
-for base_url in iter_month_urls(START_DATE, END_DATE):
-    html = requests.get(base_url, headers=HEADERS, timeout=60).text
-
-    # 只匹配 daily_updated，不匹配 daily_total_updated
-    for nc_name in sorted(set(re.findall(
-        r'icoads3\.0\.2_daily_updated_d\d{8}_c\d{8}\.nc',
-        html
-    ))):
-        date_match = re.search(r"_d(\d{8})_", nc_name)
-        if not date_match:
-            continue
-        file_date = pd.to_datetime(date_match.group(1), format="%Y%m%d")
-        if START_DATE <= file_date <= END_DATE:
-            nc_files.append((base_url, nc_name))
+# 只匹配 daily_updated，不匹配 daily_total_updated
+nc_files = sorted(set(re.findall(
+    r'icoads3\.0\.2_daily_updated_d202507\d{2}_c\d{8}\.nc',
+    html
+)))
 
 print(f"找到 {len(nc_files)} 个 NetCDF 文件")
 if len(nc_files) == 0:
-    raise RuntimeError("没有找到NetCDF文件，请检查BASE_URL_TEMPLATE或网页结构是否变化。")
+    raise RuntimeError("没有找到NetCDF文件，请检查BASE_URL或网页结构是否变化。")
 
 # ============================================================
 # 4. 逐日下载、读取、筛选
 # ============================================================
 all_records = []
 
-for base_url, fn in nc_files:
-    url = urljoin(base_url, fn)
+for fn in nc_files:
+    url = urljoin(BASE_URL, fn)
     local_nc = NC_DIR / fn
 
     print("\n" + "=" * 80)
@@ -154,7 +138,7 @@ for base_url, fn in nc_files:
     local_nc = download_nc(url, local_nc)
 
     # 再读取本地nc文件，不要直接读取url
-    with xr.open_dataset(local_nc, engine="netcdf4", decode_timedelta=True) as ds:
+    with xr.open_dataset(local_nc, engine="netcdf4") as ds:
         print(ds)
 
         keep_vars = [
@@ -300,7 +284,7 @@ else:
     out = out.drop_duplicates(subset=dedup_cols)
     out = out.sort_values(["datetime_utc", "platform_id", "latitude", "longitude"])
 
-    out_file = OUT_DIR / "icoads_20250701_20250804_china_nearshore_00_03_06_09_12_15_18_21UTC.csv"
+    out_file = OUT_DIR / "icoads_202507_china_nearshore_00_01_03_06_12UTC.csv"
     out.to_csv(out_file, index=False, encoding="utf-8-sig")
 
     print("\n" + "=" * 80)

@@ -9,10 +9,23 @@ gdas/grib2/
 *.idx
 
 # numpy / netcdf data
+model_output/
+Wind_Wave/
 *.npy
 *.npz
 *.nc
 Buoy/icoads_202507/
+src/ne_10m_land/
+
+# local documents / workstation-only files
+论文/
+
+# local analysis outputs
+src/comparison_results/**/monthly_error_statistics/
+src/comparison_results/chapter3_figures/
+src/comparison_results/era5_surface_visual/
+src/comparison_results/wipha_20250717_track/
+*.patch
 
 # Python cache
 __pycache__/
