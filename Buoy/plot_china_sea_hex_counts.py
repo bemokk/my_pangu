@@ -33,7 +33,7 @@ HEX_COUNTS_PNG = OUT_DIR / f"china_sea_hex_counts_area_42_103_13_130_{HEX_SIDE_L
 # If True, cells with zero records are labeled as 0. This is usually too dense for 1-degree grids.
 LABEL_ZERO_CELLS = False
 LABEL_EDGE_MARGIN_DEG = 0.18 * HEX_SIDE_DEG
-HEX_LABEL_FONT_SIZE = 6.4 if HEX_SIDE_DEG <= 1.0 else 8.5
+HEX_LABEL_FONT_SIZE = 8 if HEX_SIDE_DEG <= 1.0 else 9
 HEX_LABEL_FONT_COLOR = "black"
 
 
