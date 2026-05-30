@@ -1,15 +1,12 @@
-from pathlib import Path
-
 import folium
 import pandas as pd
 from folium.plugins import Fullscreen, MarkerCluster, MiniMap
 
+from paths import FIGURES_DIR, FIXED_BUOY_WIND_DIR
 
-ROOT_DIR = Path(__file__).resolve().parent / "icoads_202507"
-OUT_DIR = ROOT_DIR / "output"
 
-SUMMARY_CSV = OUT_DIR / "fixed_buoy_platform_summary_20250701_20250804_3hourly.csv"
-MAP_OUT = OUT_DIR / "fixed_buoy_map_20250701_20250804_3hourly.html"
+SUMMARY_CSV = FIXED_BUOY_WIND_DIR / "fixed_buoy_platform_summary_20250701_20250804_3hourly.csv"
+MAP_OUT = FIGURES_DIR / "fixed_buoy_map_20250701_20250804_3hourly.html"
 
 
 def normalize_longitude(lon: float) -> float:

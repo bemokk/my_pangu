@@ -1,16 +1,13 @@
-from pathlib import Path
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from paths import CHINA_SEA_RECORDS_DIR, DEFAULT_CHINA_SEA_DETAIL_CSV, FIGURES_DIR
 
-ROOT_DIR = Path(__file__).resolve().parent / "icoads_202507"
-OUT_DIR = ROOT_DIR / "output"
 
-DETAIL_CSV = OUT_DIR / "china_sea_all_platform_records_area_42_103_13_130.csv"
-DAILY_COUNTS_CSV = OUT_DIR / "china_sea_daily_counts_area_42_103_13_130_3hourly.csv"
-DAILY_COUNTS_PNG = OUT_DIR / "china_sea_daily_counts_area_42_103_13_130_3hourly.png"
+DETAIL_CSV = DEFAULT_CHINA_SEA_DETAIL_CSV
+DAILY_COUNTS_CSV = CHINA_SEA_RECORDS_DIR / "china_sea_daily_counts_area_42_103_13_130_3hourly.csv"
+DAILY_COUNTS_PNG = FIGURES_DIR / "china_sea_daily_counts_area_42_103_13_130_3hourly.png"
 
 TARGET_HOURS = [0, 3, 6, 9, 12, 15, 18, 21]
 
@@ -106,6 +103,9 @@ def plot_daily_counts(daily_counts: pd.DataFrame) -> None:
 
 
 def main() -> None:
+    CHINA_SEA_RECORDS_DIR.mkdir(parents=True, exist_ok=True)
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+
     if not DETAIL_CSV.exists():
         raise FileNotFoundError(f"Detail CSV not found: {DETAIL_CSV}")
 

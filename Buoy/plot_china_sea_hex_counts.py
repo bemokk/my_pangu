@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import matplotlib.colors as mcolors
@@ -11,12 +9,10 @@ from matplotlib.patches import Polygon as MplPolygon
 from shapely.geometry import Polygon, box
 
 from land_mask import filter_ocean_records, load_land_union
+from paths import CHINA_SEA_RECORDS_DIR, DEFAULT_CHINA_SEA_DETAIL_CSV, FIGURES_DIR
 
 
-ROOT_DIR = Path(__file__).resolve().parent / "icoads_202507"
-OUT_DIR = ROOT_DIR / "output"
-
-DETAIL_CSV = OUT_DIR / "china_sea_all_platform_records_area_42_103_13_130.csv"
+DETAIL_CSV = DEFAULT_CHINA_SEA_DETAIL_CSV
 # AREA follows the common meteorological order: [lat_max, lon_min, lat_min, lon_max].
 AREA = [42, 103, 13, 130]
 LAT_MAX, LON_MIN, LAT_MIN, LON_MAX = AREA
@@ -27,8 +23,8 @@ END_DATE = pd.Timestamp("2025-08-04 23:59:59")
 # Configurable regular hexagon side length, in degrees.
 HEX_SIDE_DEG = 1.0
 HEX_SIDE_LABEL = f"side{str(HEX_SIDE_DEG).replace('.', 'p')}deg"
-HEX_COUNTS_CSV = OUT_DIR / f"china_sea_hex_counts_area_42_103_13_130_{HEX_SIDE_LABEL}.csv"
-HEX_COUNTS_PNG = OUT_DIR / f"china_sea_hex_counts_area_42_103_13_130_{HEX_SIDE_LABEL}.png"
+HEX_COUNTS_CSV = CHINA_SEA_RECORDS_DIR / f"china_sea_hex_counts_area_42_103_13_130_{HEX_SIDE_LABEL}.csv"
+HEX_COUNTS_PNG = FIGURES_DIR / f"china_sea_hex_counts_area_42_103_13_130_{HEX_SIDE_LABEL}.png"
 
 # If True, cells with zero records are labeled as 0. This is usually too dense for 1-degree grids.
 LABEL_ZERO_CELLS = False
@@ -123,11 +119,13 @@ def count_records_by_hex(records: pd.DataFrame, hexes: pd.DataFrame) -> pd.DataF
 
 
 def save_hex_counts(hexes: pd.DataFrame) -> None:
+    CHINA_SEA_RECORDS_DIR.mkdir(parents=True, exist_ok=True)
     out = hexes.drop(columns="geometry").copy()
     out.to_csv(HEX_COUNTS_CSV, index=False, encoding="utf-8-sig")
 
 
 def plot_hex_counts(hexes: pd.DataFrame, land_union, ocean_area, records: pd.DataFrame) -> None:
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     projection = ccrs.PlateCarree()
     fig = plt.figure(figsize=(13.5, 13.0))
     ax = plt.axes(projection=projection)

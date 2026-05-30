@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -5,18 +8,17 @@ import pandas as pd
 import xarray as xr
 
 from land_mask import filter_ocean_records
+from paths import (
+    CHINA_SEA_RECORDS_DIR,
+    DEFAULT_CHINA_SEA_DETAIL_CSV,
+    DEFAULT_CHINA_SEA_SUMMARY_CSV,
+    default_icoads_nc_dirs,
+)
 
-
-ROOT_DIR = Path(__file__).resolve().parent / "icoads_202507"
-NC_DIR = ROOT_DIR / "nc"
-OUT_DIR = ROOT_DIR / "output"
 
 # AREA follows the common meteorological order: [lat_max, lon_min, lat_min, lon_max].
 AREA = [42, 103, 13, 130]
 LAT_MAX, LON_MIN, LAT_MIN, LON_MAX = AREA
-
-DETAIL_OUT = OUT_DIR / "china_sea_all_platform_records_area_42_103_13_130.csv"
-SUMMARY_OUT = OUT_DIR / "china_sea_all_platform_summary_area_42_103_13_130.csv"
 
 RENAME_DICT = {
     "lat": "latitude",
@@ -86,7 +88,15 @@ def read_area_records(nc_file: Path):
     df = df.rename(columns=RENAME_DICT)
     df = add_datetime_utc(df)
 
-    for column in ["latitude", "longitude", "hour_utc", "id_indicator", "platform_type", "wind_speed_ms", "wind_dir_deg"]:
+    for column in [
+        "latitude",
+        "longitude",
+        "hour_utc",
+        "id_indicator",
+        "platform_type",
+        "wind_speed_ms",
+        "wind_dir_deg",
+    ]:
         if column in df.columns:
             df[column] = pd.to_numeric(df[column], errors="coerce")
 
@@ -101,10 +111,7 @@ def read_area_records(nc_file: Path):
 
     df["platform_id"] = df["platform_id"].fillna("UNKNOWN")
 
-    mask = (
-        df["latitude"].between(LAT_MIN, LAT_MAX)
-        & df["longitude"].between(LON_MIN, LON_MAX)
-    )
+    mask = df["latitude"].between(LAT_MIN, LAT_MAX) & df["longitude"].between(LON_MIN, LON_MAX)
 
     area_df = df.loc[mask].copy()
     area_count = len(area_df)
@@ -116,6 +123,7 @@ def read_area_records(nc_file: Path):
         lat_max=LAT_MAX,
     )
     area_df["source_nc_file"] = nc_file.name
+    area_df["source_nc_dir"] = nc_file.parent.parent.name
 
     output_cols = [
         "datetime_utc",
@@ -130,6 +138,7 @@ def read_area_records(nc_file: Path):
         "wind_dir_deg",
         "wind_speed_ms",
         "source_nc_file",
+        "source_nc_dir",
     ]
     output_cols = [col for col in output_cols if col in area_df.columns]
     return area_df[output_cols], area_count, dropped_land_count
@@ -172,10 +181,18 @@ def build_summary(records: pd.DataFrame) -> pd.DataFrame:
                 "max_longitude": group["longitude"].max(),
                 "lat_range_deg": group["latitude"].max() - group["latitude"].min(),
                 "lon_range_deg": minimal_longitude_range(group["longitude"]),
-                "id_indicator_values": join_unique_values(group["id_indicator"]) if "id_indicator" in group.columns else "",
-                "platform_type_values": join_unique_values(group["platform_type"]) if "platform_type" in group.columns else "",
-                "wind_dir_count": int(group["wind_dir_deg"].notna().sum()) if "wind_dir_deg" in group.columns else 0,
-                "wind_speed_count": int(group["wind_speed_ms"].notna().sum()) if "wind_speed_ms" in group.columns else 0,
+                "id_indicator_values": join_unique_values(group["id_indicator"])
+                if "id_indicator" in group.columns
+                else "",
+                "platform_type_values": join_unique_values(group["platform_type"])
+                if "platform_type" in group.columns
+                else "",
+                "wind_dir_count": int(group["wind_dir_deg"].notna().sum())
+                if "wind_dir_deg" in group.columns
+                else 0,
+                "wind_speed_count": int(group["wind_speed_ms"].notna().sum())
+                if "wind_speed_ms" in group.columns
+                else 0,
             }
         )
 
@@ -186,48 +203,91 @@ def build_summary(records: pd.DataFrame) -> pd.DataFrame:
     return summary.sort_values(["obs_count", "platform_id"], ascending=[False, True])
 
 
-def main() -> None:
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Extract China Sea platform records from one or more ICOADS nc directories.",
+    )
+    parser.add_argument(
+        "--nc-dir",
+        action="append",
+        type=Path,
+        default=None,
+        help="Input directory containing ICOADS .nc files. May be repeated.",
+    )
+    parser.add_argument("--out-dir", type=Path, default=CHINA_SEA_RECORDS_DIR)
+    parser.add_argument("--detail-out", type=Path, default=None)
+    parser.add_argument("--summary-out", type=Path, default=None)
+    return parser
 
-    nc_files = sorted(NC_DIR.glob("*.nc"))
+
+def resolve_input_dirs(raw_dirs: list[Path] | None) -> list[Path]:
+    dirs = [path.resolve() for path in raw_dirs] if raw_dirs else [path.resolve() for path in default_icoads_nc_dirs()]
+    missing = [path for path in dirs if not path.exists()]
+    if missing:
+        raise FileNotFoundError(f"Input nc directories do not exist: {missing}")
+    if not dirs:
+        raise FileNotFoundError("No ICOADS nc directories found under Buoy/icoads_*/nc")
+    return dirs
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    nc_dirs = resolve_input_dirs(args.nc_dir)
+    out_dir = args.out_dir.resolve()
+    detail_out = args.detail_out.resolve() if args.detail_out else DEFAULT_CHINA_SEA_DETAIL_CSV
+    summary_out = args.summary_out.resolve() if args.summary_out else DEFAULT_CHINA_SEA_SUMMARY_CSV
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    detail_out.parent.mkdir(parents=True, exist_ok=True)
+    summary_out.parent.mkdir(parents=True, exist_ok=True)
+
+    nc_files = sorted(nc_file for nc_dir in nc_dirs for nc_file in nc_dir.glob("*.nc"))
     if not nc_files:
-        raise FileNotFoundError(f"No NetCDF files found in {NC_DIR}")
+        raise FileNotFoundError(f"No NetCDF files found in {nc_dirs}")
+
+    print("Input nc directories:")
+    for nc_dir in nc_dirs:
+        print(f"  {nc_dir}")
+    print(f"Output directory: {out_dir}")
 
     all_records = []
     total_area_count = 0
     total_dropped_land_count = 0
     for index, nc_file in enumerate(nc_files, start=1):
-        print(f"[{index:02d}/{len(nc_files):02d}] 读取 {nc_file.name}")
+        print(f"[{index:02d}/{len(nc_files):02d}] Reading {nc_file.name}")
         area_df, area_count, dropped_land_count = read_area_records(nc_file)
         total_area_count += area_count
         total_dropped_land_count += dropped_land_count
         print(
-            f"  区域内记录数：{area_count}；"
-            f"剔除陆地：{dropped_land_count}；"
-            f"保留海面：{len(area_df)}"
+            f"  in area: {area_count}, "
+            f"dropped land: {dropped_land_count}, "
+            f"kept ocean: {len(area_df)}"
         )
         if not area_df.empty:
             all_records.append(area_df)
 
     if not all_records:
-        raise RuntimeError(f"没有找到落在 AREA={AREA} 内的记录。")
+        raise RuntimeError(f"No records found inside AREA={AREA}.")
 
     records = pd.concat(all_records, ignore_index=True)
-    records = records.sort_values(["datetime_utc", "platform_id", "latitude", "longitude"], na_position="last")
-    records.to_csv(DETAIL_OUT, index=False, encoding="utf-8-sig")
+    records = records.sort_values(
+        ["datetime_utc", "platform_id", "latitude", "longitude"],
+        na_position="last",
+    )
+    records.to_csv(detail_out, index=False, encoding="utf-8-sig")
 
     summary = build_summary(records)
-    summary.to_csv(SUMMARY_OUT, index=False, encoding="utf-8-sig")
+    summary.to_csv(summary_out, index=False, encoding="utf-8-sig")
 
-    print("\n倒查完成")
+    print("\nExtraction complete")
     print(f"AREA: {AREA}")
-    print(f"区域内原始记录数：{total_area_count}")
-    print(f"剔除陆地记录数：{total_dropped_land_count}")
-    print(f"海面记录数：{len(records)}")
-    print(f"平台数：{len(summary)}")
-    print(f"时间范围：{records['datetime_utc'].min()} 至 {records['datetime_utc'].max()}")
-    print(f"明细输出：{DETAIL_OUT}")
-    print(f"汇总输出：{SUMMARY_OUT}")
+    print(f"Raw records in area: {total_area_count}")
+    print(f"Dropped land records: {total_dropped_land_count}")
+    print(f"Ocean records: {len(records)}")
+    print(f"Platforms: {len(summary)}")
+    print(f"Time range: {records['datetime_utc'].min()} to {records['datetime_utc'].max()}")
+    print(f"Detail output: {detail_out}")
+    print(f"Summary output: {summary_out}")
 
 
 if __name__ == "__main__":

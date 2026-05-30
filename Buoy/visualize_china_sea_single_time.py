@@ -1,13 +1,10 @@
-from pathlib import Path
-
 import folium
 import numpy as np
 import pandas as pd
 from folium.plugins import FastMarkerCluster, Fullscreen, HeatMap, MarkerCluster, MiniMap
 
+from paths import DEFAULT_CHINA_SEA_DETAIL_CSV, FIGURES_DIR
 
-ROOT_DIR = Path(__file__).resolve().parent / "icoads_202507"
-OUT_DIR = ROOT_DIR / "output"
 #13:0.25:42(117)  103:0.25:130  (109)
 AREA = [42, 103, 13, 130]
 LAT_MAX, LON_MIN, LAT_MIN, LON_MAX = AREA
@@ -19,8 +16,8 @@ TARGET_DATETIME = pd.Timestamp("2025-07-01 9:00:00")
 INCLUDE_HALF_HOUR_WINDOW = True
 TIME_TOLERANCE_MINUTES = 30 if INCLUDE_HALF_HOUR_WINDOW else 1
 
-DETAIL_CSV = OUT_DIR / "china_sea_all_platform_records_area_42_103_13_130.csv"
-MAP_OUT = OUT_DIR / "china_sea_platform_distribution_20250701_12UTC.html"
+DETAIL_CSV = DEFAULT_CHINA_SEA_DETAIL_CSV
+MAP_OUT = FIGURES_DIR / "china_sea_platform_distribution_20250701_12UTC.html"
 
 
 PLATFORM_TYPE_COLORS = {

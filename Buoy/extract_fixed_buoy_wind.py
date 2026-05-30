@@ -5,10 +5,11 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from paths import FIXED_BUOY_WIND_DIR
 
 ROOT_DIR = Path(__file__).resolve().parent / "icoads_202507"
 NC_DIR = ROOT_DIR / "nc"
-OUT_DIR = ROOT_DIR / "output"
+OUT_DIR = FIXED_BUOY_WIND_DIR
 
 START_DATE = pd.Timestamp("2025-07-01")
 END_DATE = pd.Timestamp("2025-08-04 23:59:59")

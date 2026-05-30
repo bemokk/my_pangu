@@ -14,7 +14,10 @@ Wind_Wave/
 *.npy
 *.npz
 *.nc
+*.part
 Buoy/icoads_202507/
+Buoy/icoads_*/
+Buoy/results/
 src/ne_10m_land/
 
 # local documents / workstation-only files

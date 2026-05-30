@@ -5,13 +5,15 @@ from pathlib import Path
 import folium
 from folium.plugins import MarkerCluster
 
+from paths import CHINA_SEA_RECORDS_DIR, FIGURES_DIR, default_icoads_nc_dirs
+
 # ============================================================
 # 1. 路径与参数设置
 # ============================================================
-ROOT_DIR = Path(__file__).resolve().parent / "icoads_202507"
-NC_DIR = ROOT_DIR / "nc"
-OUT_DIR = ROOT_DIR / "output"
+NC_DIR = default_icoads_nc_dirs()[0]
+OUT_DIR = CHINA_SEA_RECORDS_DIR
 OUT_DIR.mkdir(parents=True, exist_ok=True)
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 # 中国近海范围，可根据你的研究区修改
 LON_MIN, LON_MAX = 103, 130
@@ -468,7 +470,7 @@ for pid in moving_top_ids:
 
 folium.LayerControl().add_to(m)
 
-map_file = OUT_DIR / "platform_map_202507.html"
+map_file = FIGURES_DIR / "platform_map_202507.html"
 m.save(map_file)
 
 print("\n" + "=" * 80)
