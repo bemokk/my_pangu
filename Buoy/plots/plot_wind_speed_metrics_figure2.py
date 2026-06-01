@@ -125,7 +125,7 @@ def make_figure(df: pd.DataFrame) -> None:
     set_plot_style()
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplots(1, 3, figsize=(13.6, 4.3), constrained_layout=False)
+    fig, axes = plt.subplots(3, 1, figsize=(7.2, 10.6), constrained_layout=False)
     for ax, (metric, title, ylabel) in zip(axes, PLOT_METRICS):
         plot_metric(ax, df, metric, title, ylabel)
 
@@ -139,7 +139,7 @@ def make_figure(df: pd.DataFrame) -> None:
         edgecolor="#DDDDDD",
         framealpha=0.88,
     )
-    fig.suptitle("Wind Speed Forecast Skill Against China Sea Buoy Observations", y=1.04, fontsize=14)
+    fig.suptitle("Wind Speed Forecast Skill Against China Sea Buoy Observations", y=0.985, fontsize=14)
     fig.text(
         0.5,
         0.01,
@@ -149,7 +149,7 @@ def make_figure(df: pd.DataFrame) -> None:
         fontsize=9.5,
         color="#555555",
     )
-    fig.tight_layout(rect=[0.02, 0.06, 0.98, 0.94])
+    fig.tight_layout(rect=[0.04, 0.04, 0.98, 0.955])
 
     fig.savefig(OUT_PNG, bbox_inches="tight")
     fig.savefig(OUT_SVG, bbox_inches="tight")
