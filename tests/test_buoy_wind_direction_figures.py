@@ -30,6 +30,49 @@ def test_load_direction_metrics_keeps_all_three_datasets_and_3h_leads(tmp_path):
     assert result["rmse"].tolist() == [10, 20, 30]
 
 
+def test_load_direction_metrics_can_append_lead_zero_rows(monkeypatch, tmp_path):
+    csv_path = tmp_path / "wind_direction_metrics_by_lead.csv"
+    pd.DataFrame(
+        [
+            {
+                "dataset": "era5_realtime",
+                "dataset_label": "ERA5 realtime",
+                "lead_hour": 3,
+                "rmse": 10,
+                "mae": 8,
+            }
+        ]
+    ).to_csv(csv_path, index=False)
+
+    monkeypatch.setattr(
+        direction_figures,
+        "build_lead_zero_metric_rows",
+        lambda variable: pd.DataFrame(
+            [
+                {
+                    "dataset": "era5_realtime",
+                    "dataset_label": "ERA5 realtime",
+                    "lead_hour": 0,
+                    "variable": variable,
+                    "n": 10,
+                    "rmse": 5,
+                    "mae": 4,
+                    "bias": 0,
+                    "corr": 0.8,
+                    "pred_mean": 90,
+                    "obs_mean": 90,
+                    "diff_std": 5,
+                }
+            ]
+        ),
+    )
+
+    result = direction_figures.load_direction_metrics(csv_path, include_lead_zero=True)
+
+    assert result["lead_hour"].tolist() == [0, 3]
+    assert result["rmse"].tolist() == [5, 10]
+
+
 def test_load_direction_frequency_keeps_target_leads_and_sector_order(tmp_path):
     csv_path = tmp_path / "wind_direction_frequency_by_lead.csv"
     rows = [

@@ -10,6 +10,7 @@ if str(BUOY_DIR) not in sys.path:
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from lead_zero_metrics import append_lead_zero_rows, build_lead_zero_metric_rows
 from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 
 
@@ -17,8 +18,8 @@ METRICS_CSV = WIND_MODEL_STATISTICS_DIR / "wind_model_statistics_3_72h" / "wind_
 OUT_PNG = FIGURES_DIR / "wind_speed_metrics_figure2_style.png"
 OUT_SVG = FIGURES_DIR / "wind_speed_metrics_figure2_style.svg"
 
-LEAD_HOURS = list(range(3, 73, 3))
-X_TICKS = [3, 12, 24, 36, 48, 60, 72]
+LEAD_HOURS = list(range(0, 73, 3))
+X_TICKS = [0, 12, 24, 36, 48, 60, 72]
 
 DATASET_STYLES = {
     "era5_realtime": {
@@ -48,7 +49,7 @@ PLOT_METRICS = [
 ]
 
 
-def load_metrics(csv_path: Path) -> pd.DataFrame:
+def load_metrics(csv_path: Path, include_lead_zero: bool = False) -> pd.DataFrame:
     if not csv_path.exists():
         raise FileNotFoundError(f"Metrics CSV not found: {csv_path}")
 
@@ -62,6 +63,10 @@ def load_metrics(csv_path: Path) -> pd.DataFrame:
     df["lead_hour"] = pd.to_numeric(df["lead_hour"], errors="coerce")
     for metric, _, _ in PLOT_METRICS:
         df[metric] = pd.to_numeric(df[metric], errors="coerce")
+
+    if include_lead_zero:
+        zero_rows = build_lead_zero_metric_rows("wind_speed")
+        df = append_lead_zero_rows(df, zero_rows)
 
     return df[df["lead_hour"].isin(LEAD_HOURS)].sort_values(["dataset", "lead_hour"])
 
@@ -89,7 +94,7 @@ def style_axis(ax, ylabel: str) -> None:
     ax.set_axisbelow(True)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.set_xlim(2, 73)
+    ax.set_xlim(-1, 73)
     ax.set_xticks(X_TICKS)
     ax.set_xlabel("Forecast lead time (h)")
     ax.set_ylabel(ylabel)
@@ -125,25 +130,26 @@ def make_figure(df: pd.DataFrame) -> None:
         plot_metric(ax, df, metric, title, ylabel)
 
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(
+    axes[0].legend(
         handles,
         labels,
-        loc="upper center",
-        ncol=3,
-        frameon=False,
-        bbox_to_anchor=(0.5, 1.04),
+        loc="upper left",
+        frameon=True,
+        facecolor="white",
+        edgecolor="#DDDDDD",
+        framealpha=0.88,
     )
-    fig.suptitle("Wind Speed Forecast Skill Against China Sea Buoy Observations", y=1.12, fontsize=14)
+    fig.suptitle("Wind Speed Forecast Skill Against China Sea Buoy Observations", y=1.04, fontsize=14)
     fig.text(
         0.5,
         0.01,
-        "Lead times are every 3 hours from 3 h to 72 h. Metrics use buoy wind speed as truth.",
+        "Lead times are 0 h and every 3 hours from 3 h to 72 h. Metrics use buoy wind speed as truth.",
         ha="center",
         va="bottom",
         fontsize=9.5,
         color="#555555",
     )
-    fig.tight_layout(rect=[0.02, 0.06, 0.98, 0.96])
+    fig.tight_layout(rect=[0.02, 0.06, 0.98, 0.94])
 
     fig.savefig(OUT_PNG, bbox_inches="tight")
     fig.savefig(OUT_SVG, bbox_inches="tight")
@@ -151,7 +157,7 @@ def make_figure(df: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    df = load_metrics(METRICS_CSV)
+    df = load_metrics(METRICS_CSV, include_lead_zero=True)
     make_figure(df)
     print(f"Input: {METRICS_CSV}")
     print(f"PNG: {OUT_PNG}")

@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from lead_zero_metrics import append_lead_zero_rows, build_lead_zero_metric_rows
 from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 
 
@@ -23,9 +24,9 @@ OUT_METRICS_SVG = FIGURES_DIR / "wind_direction_metrics_figure8_style.svg"
 OUT_FREQUENCY_PNG = FIGURES_DIR / "wind_direction_frequency_radar_24_48_72h.png"
 OUT_FREQUENCY_SVG = FIGURES_DIR / "wind_direction_frequency_radar_24_48_72h.svg"
 
-METRICS_LEAD_HOURS = list(range(3, 73, 3))
+METRICS_LEAD_HOURS = list(range(0, 73, 3))
 FREQUENCY_LEAD_HOURS = [24, 48, 72]
-X_TICKS = [3, 12, 24, 36, 48, 60, 72]
+X_TICKS = [0, 12, 24, 36, 48, 60, 72]
 
 DIRECTION_SECTORS = [
     "N",
@@ -77,7 +78,10 @@ OBS_STYLE = {
 }
 
 
-def load_direction_metrics(csv_path: Path = DIRECTION_METRICS_CSV) -> pd.DataFrame:
+def load_direction_metrics(
+    csv_path: Path = DIRECTION_METRICS_CSV,
+    include_lead_zero: bool = False,
+) -> pd.DataFrame:
     if not csv_path.exists():
         raise FileNotFoundError(f"Direction metrics CSV not found: {csv_path}")
 
@@ -91,9 +95,11 @@ def load_direction_metrics(csv_path: Path = DIRECTION_METRICS_CSV) -> pd.DataFra
     df["lead_hour"] = pd.to_numeric(df["lead_hour"], errors="coerce")
     df["rmse"] = pd.to_numeric(df["rmse"], errors="coerce")
     df["mae"] = pd.to_numeric(df["mae"], errors="coerce")
-    df = df[
-        df["lead_hour"].isin(METRICS_LEAD_HOURS)
-    ].dropna(subset=["lead_hour", "rmse", "mae"])
+    if include_lead_zero:
+        zero_rows = build_lead_zero_metric_rows("wind_direction")
+        df = append_lead_zero_rows(df, zero_rows)
+
+    df = df[df["lead_hour"].isin(METRICS_LEAD_HOURS)].dropna(subset=["lead_hour", "rmse", "mae"])
     df["lead_hour"] = df["lead_hour"].astype(int)
 
     dataset_rank = {dataset: index for index, dataset in enumerate(DATASET_ORDER)}
@@ -160,7 +166,7 @@ def style_metric_axis(ax, ylabel: str) -> None:
     ax.set_axisbelow(True)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.set_xlim(2, 73)
+    ax.set_xlim(-1, 73)
     ax.set_xticks(X_TICKS)
     ax.set_xlabel("Forecast lead time (h)")
     ax.set_ylabel(ylabel)
@@ -207,7 +213,7 @@ def make_direction_metrics_figure(df: pd.DataFrame) -> None:
     fig.text(
         0.5,
         0.01,
-        "Lead times are every 3 hours from 3 h to 72 h. Direction errors use circular angular differences.",
+        "Lead times are 0 h and every 3 hours from 3 h to 72 h. Direction errors use circular angular differences.",
         ha="center",
         va="bottom",
         fontsize=9,
@@ -336,7 +342,7 @@ def make_direction_frequency_figure(df: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    metrics = load_direction_metrics()
+    metrics = load_direction_metrics(include_lead_zero=True)
     frequency = load_direction_frequency()
     make_direction_metrics_figure(metrics)
     make_direction_frequency_figure(frequency)
