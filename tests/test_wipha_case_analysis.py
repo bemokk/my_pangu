@@ -1,6 +1,8 @@
-﻿import pandas as pd
+﻿import importlib
 
-from Buoy.plots.plot_wipha_case_analysis import (
+import pandas as pd
+
+from Buoy.plots.wipha_case_common import (
     angular_difference_deg,
     circular_mean_deg,
     haversine_km,
@@ -37,3 +39,15 @@ def test_select_shortest_lead_forecasts_keeps_one_row_per_dataset_time():
     out = select_shortest_lead_forecasts(df)
     assert len(out) == 2
     assert out[out["dataset"] == "gdas_forecast"].iloc[0]["lead_hour"] == 3
+
+
+def test_split_wipha_plot_modules_are_importable():
+    modules = [
+        "Buoy.plots.plot_wipha_track_buoy_locations",
+        "Buoy.plots.plot_wipha_buoy_wind_timeseries",
+        "Buoy.plots.plot_wipha_buoy_wind_statistics_table",
+        "Buoy.plots.plot_wipha_track_forecast_error",
+        "Buoy.plots.plot_wipha_case_analysis",
+    ]
+    for module in modules:
+        assert importlib.import_module(module)
