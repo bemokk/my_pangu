@@ -20,11 +20,11 @@ HEX_SIDE_DEG = 1.0
 
 STATS_DIR = WIND_MODEL_STATISTICS_DIR / "wind_model_statistics_3_72h"
 MATCHED_SAMPLES_CSV = STATS_DIR / "matched_buoy_model_wind_samples.csv"
-OUT_CSV = STATS_DIR / "spatial_hex_best_rmse_era5_5d_vs_gdas_12_72h.csv"
-OUT_PNG = FIGURES_DIR / "spatial_hex_best_rmse_era5_5d_vs_gdas_12_72h.png"
-OUT_SVG = FIGURES_DIR / "spatial_hex_best_rmse_era5_5d_vs_gdas_12_72h.svg"
+OUT_CSV = STATS_DIR / "spatial_hex_best_rmse_era5_5d_vs_gdas_24_48_72h.csv"
+OUT_PNG = FIGURES_DIR / "spatial_hex_best_rmse_era5_5d_vs_gdas_24_48_72h.png"
+OUT_SVG = FIGURES_DIR / "spatial_hex_best_rmse_era5_5d_vs_gdas_24_48_72h.svg"
 
-LEAD_HOURS = [12, 24, 36, 48, 60, 72]
+LEAD_HOURS = [24, 48, 72]
 MIN_SAMPLES_PER_DATASET = 5
 
 DATASET_STYLES = {
@@ -320,19 +320,22 @@ def plot_best_rmse_hexes(
 
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     projection = ccrs.PlateCarree()
-    ncols = 3
-    nrows = int(np.ceil(len(LEAD_HOURS) / ncols))
     fig, axes = plt.subplots(
-        nrows,
-        ncols,
-        figsize=(15.2, 10.4),
+        1,
+        4,
+        figsize=(15.4, 4.7),
         subplot_kw={"projection": projection},
+        gridspec_kw={"width_ratios": [1.0, 1.0, 1.0, 0.62]},
         constrained_layout=False,
     )
     axes = np.asarray(axes).reshape(-1)
 
-    for panel_index, (ax, lead_hour) in enumerate(zip(axes, LEAD_HOURS)):
+    map_axes = axes[: len(LEAD_HOURS)]
+    legend_ax = axes[len(LEAD_HOURS)]
+
+    for panel_index, (ax, lead_hour) in enumerate(zip(map_axes, LEAD_HOURS)):
         lead_stats = stats[stats["lead_hour"] == lead_hour].set_index("hex_id")
+        ax.set_anchor("W")
         ax.set_extent([LON_MIN, LON_MAX, LAT_MIN, LAT_MAX], crs=projection)
         ax.set_facecolor("white")
 
@@ -406,9 +409,6 @@ def plot_best_rmse_hexes(
             zorder=6,
         )
 
-    for ax in axes[len(LEAD_HOURS):]:
-        ax.set_visible(False)
-
     handles = [
         Patch(
             facecolor=style["color"],
@@ -423,10 +423,12 @@ def plot_best_rmse_hexes(
             Patch(facecolor="white", edgecolor="#333333", label="No matched sample"),
         ]
     )
-    fig.legend(handles=handles, loc="upper center", ncol=4, frameon=False, bbox_to_anchor=(0.5, 0.992))
+    legend_ax.set_axis_off()
+    legend_ax.set_anchor("W")
+    legend_ax.legend(handles=handles, loc="center left", frameon=False, borderaxespad=0.0)
     fig.suptitle(
         "Best Wind Speed RMSE by China Sea Hexagon: ERA5 5d Forecast vs GDAS Forecast",
-        y=1.015,
+        y=1.02,
         fontsize=14,
         fontweight="bold",
     )
@@ -443,7 +445,7 @@ def plot_best_rmse_hexes(
         fontsize=9,
         color="#444444",
     )
-    fig.tight_layout(rect=[0.01, 0.07, 0.99, 0.92])
+    fig.subplots_adjust(left=0.035, right=0.99, bottom=0.16, top=0.84, wspace=0.08)
     fig.savefig(png_path, bbox_inches="tight")
     fig.savefig(svg_path, bbox_inches="tight")
     plt.close(fig)

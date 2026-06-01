@@ -48,6 +48,10 @@ PLOT_METRICS = [
     ("corr", "(c) CC", "Correlation coefficient"),
 ]
 
+Y_LIMITS = {
+    "rmse": (None, 4.6),
+}
+
 
 def load_metrics(csv_path: Path, include_lead_zero: bool = False) -> pd.DataFrame:
     if not csv_path.exists():
@@ -119,6 +123,8 @@ def plot_metric(ax, df: pd.DataFrame, metric: str, title: str, ylabel: str) -> N
 
     ax.set_title(title, loc="left", fontweight="bold")
     style_axis(ax, ylabel)
+    if metric in Y_LIMITS:
+        ax.set_ylim(*Y_LIMITS[metric])
 
 
 def make_figure(df: pd.DataFrame) -> None:
@@ -138,6 +144,7 @@ def make_figure(df: pd.DataFrame) -> None:
         facecolor="white",
         edgecolor="#DDDDDD",
         framealpha=0.88,
+        borderaxespad=0.2,
     )
     fig.suptitle("Wind Speed Forecast Skill Against China Sea Buoy Observations", y=0.985, fontsize=14)
     fig.text(

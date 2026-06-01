@@ -154,23 +154,33 @@ def make_metric_figure(df: pd.DataFrame, metric: str) -> None:
     set_plot_style()
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplots(1, len(LEAD_HOURS), figsize=(14.0, 4.6), constrained_layout=False)
+    fig, axes = plt.subplots(len(LEAD_HOURS), 1, figsize=(7.2, 10.2), constrained_layout=False)
     if len(LEAD_HOURS) == 1:
         axes = [axes]
+    else:
+        axes = axes.ravel().tolist()
 
     for ax, lead_hour in zip(axes, LEAD_HOURS):
         plot_metric_panel(ax, df, lead_hour, metric, config["ylabel"])
 
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(
+    axes[0].legend(
         handles,
         labels,
-        loc="upper center",
-        ncol=3,
-        frameon=False,
-        bbox_to_anchor=(0.5, 1.035),
+        loc="upper left",
+        frameon=True,
+        facecolor="white",
+        edgecolor="#DDDDDD",
+        framealpha=0.9,
+        borderaxespad=0.2,
     )
-    fig.suptitle(config["title"], y=1.105, fontsize=14, fontweight="bold")
+    first_ymin, first_ymax = axes[0].get_ylim()
+    axes[0].set_ylim(first_ymin, first_ymax + (first_ymax - first_ymin) * 0.22)
+    for ax in axes[1:]:
+        ymin, ymax = ax.get_ylim()
+        ax.set_ylim(ymin, ymax + (ymax - ymin) * 0.20)
+
+    fig.suptitle(config["title"], y=0.985, fontsize=14, fontweight="bold")
     fig.text(
         0.5,
         0.01,
@@ -180,7 +190,7 @@ def make_metric_figure(df: pd.DataFrame, metric: str) -> None:
         fontsize=9,
         color="#555555",
     )
-    fig.tight_layout(rect=[0.02, 0.07, 0.98, 0.93])
+    fig.tight_layout(rect=[0.04, 0.045, 0.98, 0.955])
 
     fig.savefig(config["png"], bbox_inches="tight")
     fig.savefig(config["svg"], bbox_inches="tight")

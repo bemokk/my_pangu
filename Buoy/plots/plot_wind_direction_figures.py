@@ -196,20 +196,26 @@ def make_direction_metrics_figure(df: pd.DataFrame) -> None:
     set_plot_style()
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.55), constrained_layout=False)
+    fig, axes = plt.subplots(2, 1, figsize=(7.2, 7.6), constrained_layout=False)
     plot_direction_metric(axes[0], df, "rmse", "(a) RMSE", "RMSE (degree)")
     plot_direction_metric(axes[1], df, "mae", "(b) MAE", "MAE (degree)")
 
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(
+    axes[0].legend(
         handles,
         labels,
-        loc="upper center",
-        ncol=3,
-        frameon=False,
-        bbox_to_anchor=(0.5, 1.03),
+        loc="upper left",
+        frameon=True,
+        facecolor="white",
+        edgecolor="#DDDDDD",
+        framealpha=0.9,
+        borderaxespad=0.2,
     )
-    fig.suptitle("Wind Direction Forecast Error Against China Sea Buoy Observations", y=1.105, fontsize=14)
+    for ax in axes:
+        ymin, ymax = ax.get_ylim()
+        ax.set_ylim(ymin, ymax + (ymax - ymin) * 0.22)
+
+    fig.suptitle("Wind Direction Forecast Error Against China Sea Buoy Observations", y=0.985, fontsize=14)
     fig.text(
         0.5,
         0.01,
@@ -219,7 +225,7 @@ def make_direction_metrics_figure(df: pd.DataFrame) -> None:
         fontsize=9,
         color="#555555",
     )
-    fig.tight_layout(rect=[0.02, 0.07, 0.98, 0.93])
+    fig.tight_layout(rect=[0.04, 0.06, 0.98, 0.945])
     fig.savefig(OUT_METRICS_PNG, bbox_inches="tight")
     fig.savefig(OUT_METRICS_SVG, bbox_inches="tight")
     plt.close(fig)

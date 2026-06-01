@@ -12,6 +12,10 @@ sys.path.insert(0, str(PROJECT_ROOT / "Buoy"))
 from plots import plot_spatial_hex_best_rmse as spatial_rmse  # noqa: E402
 
 
+def test_default_lead_hours_are_24_48_72_only():
+    assert spatial_rmse.LEAD_HOURS == [24, 48, 72]
+
+
 def test_compute_hex_rmse_winners_compares_lagged_era5_and_gdas_only():
     hexes = pd.DataFrame(
         {
