@@ -9,7 +9,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "Buoy"))
 
-import plot_wind_speed_beaufort_sample_counts as sample_plot  # noqa: E402
+from plots import plot_wind_speed_beaufort_sample_counts as sample_plot  # noqa: E402
 
 
 def test_load_sample_counts_collapses_duplicate_dataset_counts(tmp_path):

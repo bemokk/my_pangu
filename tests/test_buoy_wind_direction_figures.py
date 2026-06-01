@@ -9,7 +9,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "Buoy"))
 
-import plot_wind_direction_figures as direction_figures  # noqa: E402
+from plots import plot_wind_direction_figures as direction_figures  # noqa: E402
 
 
 def test_load_direction_metrics_keeps_all_three_datasets_and_3h_leads(tmp_path):

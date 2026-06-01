@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+BUOY_DIR = Path(__file__).resolve().parents[1]
+if str(BUOY_DIR) not in sys.path:
+    sys.path.insert(0, str(BUOY_DIR))
 
 import matplotlib.pyplot as plt
 import pandas as pd

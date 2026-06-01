@@ -9,7 +9,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "Buoy"))
 
-import plot_spatial_hex_best_rmse as spatial_rmse  # noqa: E402
+from plots import plot_spatial_hex_best_rmse as spatial_rmse  # noqa: E402
 
 
 def test_compute_hex_rmse_winners_compares_lagged_era5_and_gdas_only():

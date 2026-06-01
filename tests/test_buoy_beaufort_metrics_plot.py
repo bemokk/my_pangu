@@ -9,7 +9,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "Buoy"))
 
-import plot_wind_speed_beaufort_metrics as beaufort_plot  # noqa: E402
+from plots import plot_wind_speed_beaufort_metrics as beaufort_plot  # noqa: E402
 
 
 def test_load_beaufort_metrics_filters_three_datasets_and_target_leads(tmp_path):

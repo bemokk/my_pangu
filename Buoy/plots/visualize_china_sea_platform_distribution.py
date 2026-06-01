@@ -1,23 +1,29 @@
-import folium
+import sys
+from pathlib import Path
+
+BUOY_DIR = Path(__file__).resolve().parents[1]
+if str(BUOY_DIR) not in sys.path:
+    sys.path.insert(0, str(BUOY_DIR))
+
 import numpy as np
+import folium
 import pandas as pd
 from folium.plugins import FastMarkerCluster, Fullscreen, HeatMap, MarkerCluster, MiniMap
 
 from paths import DEFAULT_CHINA_SEA_DETAIL_CSV, FIGURES_DIR
 
-#13:0.25:42(117)  103:0.25:130  (109)
+
 AREA = [42, 103, 13, 130]
 LAT_MAX, LON_MIN, LAT_MIN, LON_MAX = AREA
+TARGET_HOURS = [0, 3, 6, 9, 12, 15, 18, 21]
 
-TARGET_DATETIME = pd.Timestamp("2025-07-01 9:00:00")
-
-# True includes records within +/-30 minutes of TARGET_DATETIME.
-# False keeps only near-exact TARGET_DATETIME.
+# True includes records within +/-30 minutes of each target UTC hour.
+# False keeps only near-exact target hours.
 INCLUDE_HALF_HOUR_WINDOW = True
-TIME_TOLERANCE_MINUTES = 30 if INCLUDE_HALF_HOUR_WINDOW else 1
+TIME_TOLERANCE_HOURS = 0.5 if INCLUDE_HALF_HOUR_WINDOW else 0.01
 
 DETAIL_CSV = DEFAULT_CHINA_SEA_DETAIL_CSV
-MAP_OUT = FIGURES_DIR / "china_sea_platform_distribution_20250701_12UTC.html"
+MAP_OUT = FIGURES_DIR / "china_sea_platform_distribution_area_42_103_13_130.html"
 
 
 PLATFORM_TYPE_COLORS = {
@@ -34,6 +40,26 @@ def normalize_longitude(lon: float) -> float:
 def platform_color(platform_type_values: str) -> str:
     first_value = str(platform_type_values).split(",")[0].strip()
     return PLATFORM_TYPE_COLORS.get(first_value, "#9467bd")
+
+
+def build_platform_popup(row: pd.Series, map_lon: float) -> str:
+    return f"""
+    <div style="font-family: Arial, sans-serif; font-size: 13px; line-height: 1.45;">
+      <b>Platform ID:</b> {row['platform_id']}<br>
+      <b>Platform type:</b> {row.get('platform_type_values', '')}<br>
+      <b>ID indicator:</b> {row.get('id_indicator_values', '')}<br>
+      <b>Records:</b> {int(row['obs_count'])}<br>
+      <b>Time:</b> {row['first_time']} to {row['last_time']}<br>
+      <b>Mean lat/lon:</b> {row['mean_latitude']:.4f}, {map_lon:.4f}<br>
+      <b>Raw mean lon:</b> {row['mean_longitude']:.4f}<br>
+      <b>Lat range:</b> {row['min_latitude']:.4f} to {row['max_latitude']:.4f}
+      ({row['lat_range_deg']:.4f} deg)<br>
+      <b>Lon range:</b> {row['min_longitude']:.4f} to {row['max_longitude']:.4f}
+      ({row['lon_range_deg']:.4f} deg)<br>
+      <b>Wind direction records:</b> {int(row.get('wind_dir_count', 0))}<br>
+      <b>Wind speed records:</b> {int(row.get('wind_speed_count', 0))}<br>
+    </div>
+    """
 
 
 def join_unique_values(series: pd.Series) -> str:
@@ -60,8 +86,8 @@ def build_summary(records: pd.DataFrame) -> pd.DataFrame:
             {
                 "platform_id": platform_id,
                 "obs_count": int(len(group)),
-                "first_time": group["datetime_utc"].min(),
-                "last_time": group["datetime_utc"].max(),
+                "first_time": group["datetime_utc"].min() if "datetime_utc" in group.columns else "",
+                "last_time": group["datetime_utc"].max() if "datetime_utc" in group.columns else "",
                 "mean_latitude": group["latitude"].mean(),
                 "mean_longitude": group["longitude"].mean(),
                 "min_latitude": group["latitude"].min(),
@@ -84,38 +110,33 @@ def build_summary(records: pd.DataFrame) -> pd.DataFrame:
     return summary.sort_values(["obs_count", "platform_id"], ascending=[False, True])
 
 
-def filter_records(records: pd.DataFrame) -> pd.DataFrame:
+def add_target_hour(records: pd.DataFrame) -> pd.DataFrame:
     records = records.copy()
-    records["datetime_utc"] = pd.to_datetime(records["datetime_utc"], errors="coerce")
 
-    required_cols = ["datetime_utc", "latitude", "longitude", "wind_dir_deg", "wind_speed_ms"]
-    records = records.dropna(subset=required_cols).copy()
+    if "datetime_utc" in records.columns:
+        records["datetime_utc"] = pd.to_datetime(records["datetime_utc"], errors="coerce")
+        hour_from_time = (
+            records["datetime_utc"].dt.hour
+            + records["datetime_utc"].dt.minute / 60.0
+            + records["datetime_utc"].dt.second / 3600.0
+        )
+    else:
+        hour_from_time = pd.Series(pd.NA, index=records.index, dtype="float64")
 
-    time_diff_minutes = (
-        records["datetime_utc"] - TARGET_DATETIME
-    ).abs().dt.total_seconds() / 60.0
+    if "hour_utc" not in records.columns:
+        records["hour_utc"] = pd.NA
 
-    return records[
-        records["wind_dir_deg"].between(1, 360)
-        & records["wind_speed_ms"].between(0, 75)
-        & (time_diff_minutes <= TIME_TOLERANCE_MINUTES)
-    ].copy()
+    records["hour_utc"] = pd.to_numeric(records["hour_utc"], errors="coerce").fillna(hour_from_time)
 
+    target_hours = np.array(TARGET_HOURS, dtype=float)
+    hour_values = records["hour_utc"].to_numpy(dtype=float)
+    raw_diff = np.abs(hour_values[:, None] - target_hours[None, :])
+    diff = np.minimum(raw_diff, 24.0 - raw_diff)
+    nearest_idx = np.nanargmin(np.where(np.isnan(diff), np.inf, diff), axis=1)
 
-def build_platform_popup(row: pd.Series, map_lon: float) -> str:
-    return f"""
-    <div style="font-family: Arial, sans-serif; font-size: 13px; line-height: 1.45;">
-      <b>Platform ID:</b> {row['platform_id']}<br>
-      <b>Platform type:</b> {row.get('platform_type_values', '')}<br>
-      <b>ID indicator:</b> {row.get('id_indicator_values', '')}<br>
-      <b>Records:</b> {int(row['obs_count'])}<br>
-      <b>Time:</b> {row['first_time']} to {row['last_time']}<br>
-      <b>Mean lat/lon:</b> {row['mean_latitude']:.4f}, {map_lon:.4f}<br>
-      <b>Raw mean lon:</b> {row['mean_longitude']:.4f}<br>
-      <b>Wind direction records:</b> {int(row.get('wind_dir_count', 0))}<br>
-      <b>Wind speed records:</b> {int(row.get('wind_speed_count', 0))}<br>
-    </div>
-    """
+    records["target_hour_utc"] = target_hours[nearest_idx].astype(int)
+    records["hour_diff"] = np.abs(records["hour_utc"] - records["target_hour_utc"])
+    return records
 
 
 def add_type_legend(map_obj: folium.Map) -> None:
@@ -149,18 +170,26 @@ def main() -> None:
 
     records = pd.read_csv(DETAIL_CSV)
     total_records = len(records)
-    records = filter_records(records)
+    records = add_target_hour(records)
 
-    if records.empty:
-        raise RuntimeError(f"No records found for {TARGET_DATETIME} with tolerance {TIME_TOLERANCE_MINUTES} minutes.")
-
-    summary = build_summary(records).dropna(subset=["mean_latitude", "mean_longitude"]).copy()
+    required_cols = ["latitude", "longitude", "wind_dir_deg", "wind_speed_ms"]
+    records = records.dropna(subset=required_cols).copy()
+    records = records[
+        records["wind_dir_deg"].between(1, 360)
+        & records["wind_speed_ms"].between(0, 75)
+        & (records["hour_diff"] <= TIME_TOLERANCE_HOURS)
+    ].copy()
+    summary = build_summary(records)
+    summary = summary.dropna(subset=["mean_latitude", "mean_longitude"]).copy()
 
     records["map_longitude"] = records["longitude"].map(normalize_longitude)
     summary["map_longitude"] = summary["mean_longitude"].map(normalize_longitude)
 
+    center_lat = (LAT_MIN + LAT_MAX) / 2
+    center_lon = (LON_MIN + LON_MAX) / 2
+
     m = folium.Map(
-        location=[(LAT_MIN + LAT_MAX) / 2, (LON_MIN + LON_MAX) / 2],
+        location=[center_lat, center_lon],
         zoom_start=5,
         tiles=None,
         control_scale=True,
@@ -179,19 +208,23 @@ def main() -> None:
         name="AREA boundary",
     ).add_to(m)
 
-    points = records[["latitude", "map_longitude"]].values.tolist()
+    heat_points = records[["latitude", "map_longitude"]].values.tolist()
     HeatMap(
-        points,
+        heat_points,
         name="Observation density heatmap",
-        radius=16,
+        radius=14,
         blur=18,
         min_opacity=0.25,
         max_zoom=8,
     ).add_to(m)
 
-    FastMarkerCluster(points, name="All observation records").add_to(m)
+    FastMarkerCluster(
+        records[["latitude", "map_longitude"]].values.tolist(),
+        name="All observation records",
+    ).add_to(m)
 
     platform_cluster = MarkerCluster(name="Platform mean positions").add_to(m)
+
     for _, row in summary.iterrows():
         lat = float(row["mean_latitude"])
         lon = float(row["map_longitude"])
@@ -228,9 +261,10 @@ def main() -> None:
       font-size: 13px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.2);
     ">
-      <b>China Sea ICOADS records at 2025-07-01 12:00 UTC</b><br>
+      <b>China Sea and nearby ICOADS records</b><br>
       AREA = [42, 103, 13, 130], wind direction/speed required<br>
-      Time window: {'±30 min' if INCLUDE_HALF_HOUR_WINDOW else 'exact only'}<br>
+      UTC hours: 0, 3, 6, 9, 12, 15, 18, 21
+      ({'±30 min' if INCLUDE_HALF_HOUR_WINDOW else 'exact only'})<br>
       Records shown: {len(records):,} / {total_records:,} | Platforms: {len(summary):,}
     </div>
     """
