@@ -1,0 +1,58 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+import numpy as np
+import xarray as xr
+
+
+TIME_CANDIDATES = ("time", "valid_time")
+
+
+def find_data_var(ds: xr.Dataset, candidates: Sequence[str]) -> str:
+    candidate_set = {candidate.lower() for candidate in candidates}
+
+    for candidate in candidates:
+        if candidate in ds.data_vars:
+            return candidate
+
+    for var_name, data_array in ds.data_vars.items():
+        attrs = data_array.attrs
+        values = (
+            str(attrs.get("shortName", "")).lower(),
+            str(attrs.get("GRIB_shortName", "")).lower(),
+            str(attrs.get("standard_name", "")).lower(),
+            str(attrs.get("long_name", "")).lower(),
+        )
+        if any(value in candidate_set for value in values):
+            return var_name
+
+    raise KeyError(f"Could not find any variable matching {list(candidates)}")
+
+
+def normalize_time_coord(ds: xr.Dataset) -> xr.Dataset:
+    rename = {}
+    for candidate in TIME_CANDIDATES:
+        if candidate in ds.coords or candidate in ds.dims or candidate in ds.variables:
+            if candidate != "time":
+                rename[candidate] = "time"
+            break
+    else:
+        raise KeyError("Dataset does not contain a time or valid_time coordinate")
+
+    if rename:
+        ds = ds.rename(rename)
+
+    if "time" not in ds.dims:
+        if "time" not in ds.coords:
+            raise KeyError("Dataset does not contain a usable time coordinate")
+        ds = ds.expand_dims(time=np.atleast_1d(ds["time"].values))
+
+    return ds.sortby("time")
+
+
+def direction_degrees_to_unit(degrees: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    radians = np.deg2rad(np.asarray(degrees, dtype=np.float32))
+    sin_v = np.sin(radians).astype(np.float32)
+    cos_v = np.cos(radians).astype(np.float32)
+    return sin_v, cos_v

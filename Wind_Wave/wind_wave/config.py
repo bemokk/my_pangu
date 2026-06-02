@@ -1,0 +1,29 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+
+INPUT_VARIABLES = ("u10", "v10")
+TARGET_VARIABLES = ("swh", "mwp", "pp1d", "sin_mwd", "cos_mwd")
+DEFAULT_HISTORY_HOURS = 24
+DEFAULT_LEAD_HOURS = (6, 12, 24, 48, 72)
+
+
+def project_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def data_dir() -> Path:
+    return project_root() / "data"
+
+
+def raw_data_dir(year: str = "2025") -> Path:
+    return data_dir() / year
+
+
+def extracted_data_dir(year: str = "2025") -> Path:
+    return data_dir() / "extracted" / year
+
+
+def outputs_dir() -> Path:
+    return project_root() / "outputs"
