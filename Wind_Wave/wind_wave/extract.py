@@ -29,12 +29,20 @@ def discover_archives(raw_dir: Path) -> list[Path]:
     return archives
 
 
-def extract_archives(raw_dir: Path, extracted_root: Path) -> list[ExtractedPair]:
+def extract_archives(
+    raw_dir: Path,
+    extracted_root: Path,
+    limit: int | None = None,
+) -> list[ExtractedPair]:
     extracted_root = Path(extracted_root)
     extracted_root.mkdir(parents=True, exist_ok=True)
 
     pairs = []
-    for archive in discover_archives(raw_dir):
+    archives = discover_archives(raw_dir)
+    if limit is not None:
+        archives = archives[:limit]
+
+    for archive in archives:
         extract_dir = extracted_root / archive.stem
         oper_nc = extract_dir / OPER_NAME
         wave_nc = extract_dir / WAVE_NAME

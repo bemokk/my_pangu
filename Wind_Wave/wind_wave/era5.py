@@ -7,6 +7,8 @@ import xarray as xr
 
 
 TIME_CANDIDATES = ("time", "valid_time")
+LAT_CANDIDATES = ("latitude", "lat")
+LON_CANDIDATES = ("longitude", "lon")
 
 
 def find_data_var(ds: xr.Dataset, candidates: Sequence[str]) -> str:
@@ -49,6 +51,43 @@ def normalize_time_coord(ds: xr.Dataset) -> xr.Dataset:
         ds = ds.expand_dims(time=np.atleast_1d(ds["time"].values))
 
     return ds.sortby("time")
+
+
+def normalize_spatial_coords(ds: xr.Dataset) -> xr.Dataset:
+    rename = {}
+    for candidate in LAT_CANDIDATES:
+        if candidate in ds.coords or candidate in ds.dims or candidate in ds.variables:
+            if candidate != "latitude":
+                rename[candidate] = "latitude"
+            break
+    else:
+        raise KeyError("Dataset does not contain a latitude or lat coordinate")
+
+    for candidate in LON_CANDIDATES:
+        if candidate in ds.coords or candidate in ds.dims or candidate in ds.variables:
+            if candidate != "longitude":
+                rename[candidate] = "longitude"
+            break
+    else:
+        raise KeyError("Dataset does not contain a longitude or lon coordinate")
+
+    if rename:
+        ds = ds.rename(rename)
+    return ds
+
+
+def drop_extra_dims(ds: xr.Dataset, allowed_dims: set[str] | None = None) -> xr.Dataset:
+    allowed = allowed_dims or {"time", "latitude", "longitude"}
+    for dim in list(ds.dims):
+        if dim in allowed:
+            continue
+        if dim == "expver":
+            ds = ds.max(dim=dim, skipna=True)
+        elif ds.sizes[dim] == 1:
+            ds = ds.isel({dim: 0}, drop=True)
+        else:
+            raise ValueError(f"Unsupported extra dimension {dim} with size {ds.sizes[dim]}")
+    return ds
 
 
 def direction_degrees_to_unit(degrees: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

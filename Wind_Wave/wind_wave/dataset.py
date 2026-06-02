@@ -11,7 +11,13 @@ import xarray as xr
 from torch.utils.data import Dataset
 
 from .config import DEFAULT_HISTORY_HOURS, DEFAULT_LEAD_HOURS
-from .era5 import direction_degrees_to_unit, find_data_var, normalize_time_coord
+from .era5 import (
+    direction_degrees_to_unit,
+    drop_extra_dims,
+    find_data_var,
+    normalize_spatial_coords,
+    normalize_time_coord,
+)
 
 
 WIND_CANDIDATES = {
@@ -78,7 +84,11 @@ class NormalizationStats:
 
 
 def open_dataset(path: Path) -> xr.Dataset:
-    return normalize_time_coord(xr.open_dataset(path, engine="netcdf4"))
+    ds = xr.open_dataset(path, engine="netcdf4")
+    ds = normalize_time_coord(ds)
+    ds = normalize_spatial_coords(ds)
+    ds = drop_extra_dims(ds)
+    return ds
 
 
 def _spatial_indexer(ds: xr.Dataset, spatial_stride: int, crop_size: int | None) -> xr.Dataset:
