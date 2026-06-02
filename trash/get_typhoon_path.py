@@ -92,10 +92,10 @@ if __name__ == "__main__":
     }
 
     # 第2509号台风"罗莎"(KROSA)的信息
-    tc_id = "3064324"  # 从URL https://typhoon.nmc.cn/web.html?tid=3064324 中获取的tid
-    tc_num = "2509"  # 台风编号
-    name_cn = "罗莎"  # 中文名
-    name_en = "KROSA"  # 英文名
+    tc_id = "3058051"  # 从URL https://typhoon.nmc.cn/web.html?tid=3064324 中获取的tid
+    tc_num = "2506"  # 台风编号
+    name_cn = "韦帕"  # 中文名
+    name_en = "Wipha"  # 英文名
 
     print(f"正在获取第{tc_num}号台风'{name_cn}'({name_en})的路径信息...")
 

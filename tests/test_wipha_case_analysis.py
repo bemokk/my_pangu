@@ -228,14 +228,14 @@ def test_wipha_virtual_station_radius_settings_are_fixed():
 
     assert by_id["VS1"]["lon"] == 120.0
     assert by_id["VS1"]["lat"] == 20.0
-    assert by_id["VS1"]["radius_km"] == 300.0
-    assert by_id["VS2"]["lon"] == 113.0
-    assert by_id["VS2"]["lat"] == 21.0
-    assert by_id["VS2"]["radius_km"] == 400.0
+    assert by_id["VS1"]["radius_km"] == 200.0
+    assert by_id["VS2"]["lon"] == 115.8
+    assert by_id["VS2"]["lat"] == 22.8
+    assert by_id["VS2"]["radius_km"] == 200.0
 
 
 def test_geodesic_circle_points_are_closed():
-    points = geodesic_circle_points(120.0, 20.0, 300.0, n_points=13)
+    points = geodesic_circle_points(120.0, 20.0, 200.0, n_points=13)
 
     assert len(points) == 13
     assert points[0] == points[-1]
