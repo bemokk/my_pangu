@@ -17,9 +17,14 @@ from plots.wipha_case_common import (
     OUT_STATS_XLSX,
     compute_statistics,
     ensure_dirs,
-    prepare_buoy_case_data,
     set_plot_style,
 )
+from plots.plot_wipha_buoy_wind_timeseries import prepare_fixed_init_timeseries_data
+
+
+def prepare_statistics_input() -> pd.DataFrame:
+    _, merged = prepare_fixed_init_timeseries_data()
+    return merged
 
 
 def plot_statistics_table(stats: pd.DataFrame) -> None:
@@ -64,7 +69,7 @@ def plot_statistics_table(stats: pd.DataFrame) -> None:
 
 def generate() -> list[Path]:
     ensure_dirs()
-    _, merged, _ = prepare_buoy_case_data()
+    merged = prepare_statistics_input()
     stats = compute_statistics(merged)
     plot_statistics_table(stats)
     return [OUT_STATS_CSV, OUT_STATS_XLSX, OUT_STATS_TABLE_PNG, OUT_STATS_TABLE_SVG]
