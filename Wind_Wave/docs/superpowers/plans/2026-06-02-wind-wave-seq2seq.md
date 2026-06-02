@@ -109,8 +109,8 @@ def test_valid_initialization_times_require_history_and_future_leads():
     )
 
     assert valid[0] == pd.Timestamp("2025-01-01T23:00")
-    assert valid[-1] == pd.Timestamp("2025-01-03T23:00")
-    assert len(valid) == 48
+    assert valid[-1] == pd.Timestamp("2025-01-02T23:00")
+    assert len(valid) == 25
 
 
 def test_chronological_split_preserves_order_and_no_overlap():
