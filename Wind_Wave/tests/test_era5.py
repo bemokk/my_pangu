@@ -3,6 +3,7 @@ import pandas as pd
 import xarray as xr
 
 from wind_wave.era5 import (
+    align_wind_to_wave_grid,
     direction_degrees_to_unit,
     find_data_var,
     normalize_time_coord,
@@ -47,3 +48,29 @@ def test_direction_degrees_to_unit_wraps_around():
 
     np.testing.assert_allclose(sin_v, np.array([0.0, 1.0, 0.0]), atol=1e-6)
     np.testing.assert_allclose(cos_v, np.array([1.0, 0.0, 1.0]), atol=1e-6)
+
+
+def test_align_wind_to_wave_grid_subsets_finer_wind_grid():
+    wind = xr.Dataset(
+        {"u10": (("time", "latitude", "longitude"), np.zeros((1, 5, 5)))},
+        coords={
+            "time": pd.date_range("2025-01-01", periods=1),
+            "latitude": np.array([90.0, 89.75, 89.5, 89.25, 89.0]),
+            "longitude": np.array([0.0, 0.25, 0.5, 0.75, 1.0]),
+        },
+    )
+    wave = xr.Dataset(
+        {"swh": (("time", "latitude", "longitude"), np.zeros((1, 3, 3)))},
+        coords={
+            "time": pd.date_range("2025-01-01", periods=1),
+            "latitude": np.array([90.0, 89.5, 89.0]),
+            "longitude": np.array([0.0, 0.5, 1.0]),
+        },
+    )
+
+    aligned = align_wind_to_wave_grid(wind, wave)
+
+    assert aligned.sizes["latitude"] == 3
+    assert aligned.sizes["longitude"] == 3
+    np.testing.assert_allclose(aligned["latitude"].values, wave["latitude"].values)
+    np.testing.assert_allclose(aligned["longitude"].values, wave["longitude"].values)

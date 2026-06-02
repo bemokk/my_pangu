@@ -25,6 +25,7 @@ from .dataset import (
     compute_normalization_stats,
     open_dataset,
 )
+from .era5 import align_wind_to_wave_grid
 from .extract import ExtractedPair, extract_archives
 from .indexing import build_valid_initialization_times, chronological_split
 from .losses import masked_mse_loss
@@ -78,9 +79,7 @@ def _open_pairs(pairs: list[ExtractedPair]) -> tuple[xr.Dataset, xr.Dataset]:
     wind = _deduplicate_time(xr.concat(wind_parts, dim="time")).sortby("time")
     wave = _deduplicate_time(xr.concat(wave_parts, dim="time")).sortby("time")
 
-    if len(wind["latitude"]) != len(wave["latitude"]) or len(wind["longitude"]) != len(wave["longitude"]):
-        raise ValueError("Wind and wave latitude/longitude grids have different shapes")
-
+    wind = align_wind_to_wave_grid(wind, wave)
     return wind, wave
 
 

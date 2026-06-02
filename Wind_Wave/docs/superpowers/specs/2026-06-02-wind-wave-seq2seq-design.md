@@ -25,6 +25,8 @@ Wave targets:
 
 Wave direction is represented as sine and cosine channels, not raw degrees, so circular direction errors such as 359 degrees versus 1 degree are handled correctly.
 
+If an extracted ERA5 wave file does not contain `peak_wave_period` or `pp1d`, the first experiment keeps the five-channel target shape by using `mwp` as the `peak_wave_period` fallback and emitting a runtime warning. This keeps the training pipeline executable on the downloaded data while making the limitation visible in logs.
+
 ## Existing Data
 
 Raw data is already present:
@@ -95,7 +97,7 @@ Wave target variables:
 
 - `swh`, `significant_height_of_combined_wind_waves_and_swell`
 - `mwp`, `mean_wave_period`
-- `pp1d`, `peak_wave_period`, `peak_wave_period_of_combined_wind_waves_and_swell`
+- `pp1d`, `peak_wave_period`, `peak_wave_period_of_combined_wind_waves_and_swell`, with `mwp` fallback when absent
 - `mwd`, `mean_wave_direction`
 
 The model target uses `sin_mwd` and `cos_mwd`, computed from `mwd` degrees with meteorological convention preserved as a circular scalar target.
@@ -210,7 +212,7 @@ The pipeline should fail with clear messages when:
 - no zip archives are present
 - a zip archive does not contain both expected NetCDF files
 - required wind variables cannot be found
-- required wave variables cannot be found
+- required wave variables `swh`, `mwp`, or `mwd` cannot be found
 - wind and wave latitude/longitude grids cannot be aligned
 - no valid `t0` samples remain after applying history and lead-time requirements
 - normalization statistics cannot be computed from finite values

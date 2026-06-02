@@ -59,6 +59,26 @@ def test_dataset_returns_expected_seq2seq_shapes_with_stride():
     assert sample["target_times"][0] == "2025-01-02T06:00:00"
 
 
+def test_dataset_uses_mean_period_as_peak_period_fallback_when_peak_missing():
+    wind, wave = make_synthetic_pair()
+    wave = wave.drop_vars("pp1d")
+    stats = NormalizationStats.identity(
+        input_names=("u10", "v10"),
+        target_names=("swh", "mwp", "pp1d", "sin_mwd", "cos_mwd"),
+    )
+    ds = WindWaveSeq2SeqDataset(
+        wind,
+        wave,
+        initialization_times=[pd.Timestamp("2025-01-02T00:00")],
+        stats=stats,
+        spatial_stride=2,
+    )
+
+    sample = ds[0]
+
+    np.testing.assert_allclose(sample["targets"][:, 2].numpy(), sample["targets"][:, 1].numpy())
+
+
 def test_compute_normalization_stats_rejects_all_nan_values():
     wind, wave = make_synthetic_pair()
     wind["u10"][:] = np.nan

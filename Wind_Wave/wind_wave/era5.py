@@ -90,6 +90,18 @@ def drop_extra_dims(ds: xr.Dataset, allowed_dims: set[str] | None = None) -> xr.
     return ds
 
 
+def align_wind_to_wave_grid(wind_ds: xr.Dataset, wave_ds: xr.Dataset) -> xr.Dataset:
+    try:
+        return wind_ds.sel(
+            latitude=wave_ds["latitude"],
+            longitude=wave_ds["longitude"],
+        )
+    except Exception as exc:
+        raise ValueError(
+            "Wind grid cannot be aligned to wave latitude/longitude coordinates"
+        ) from exc
+
+
 def direction_degrees_to_unit(degrees: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     radians = np.deg2rad(np.asarray(degrees, dtype=np.float32))
     sin_v = np.sin(radians).astype(np.float32)

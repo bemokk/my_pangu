@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -129,7 +130,20 @@ def _select_wave_array(
     spatial_stride: int,
     crop_size: int | None,
 ) -> np.ndarray:
-    names = {key: find_data_var(wave_ds, candidates) for key, candidates in WAVE_CANDIDATES.items()}
+    names = {
+        key: find_data_var(wave_ds, candidates)
+        for key, candidates in WAVE_CANDIDATES.items()
+        if key != "pp1d"
+    }
+    try:
+        names["pp1d"] = find_data_var(wave_ds, WAVE_CANDIDATES["pp1d"])
+    except KeyError:
+        names["pp1d"] = names["mwp"]
+        warnings.warn(
+            "Peak wave period was not found; using mean wave period for the pp1d target channel.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     sliced = _spatial_indexer(wave_ds[list(names.values())].sel(time=times), spatial_stride, crop_size)
 
     swh = sliced[names["swh"]].transpose("time", "latitude", "longitude").values.astype(np.float32)

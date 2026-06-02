@@ -143,6 +143,7 @@ Required public functions and behavior:
 - `project_root`: returns the absolute `Wind_Wave` directory.
 - `find_data_var`: returns the first candidate present in `ds.data_vars`, then checks xarray attributes `shortName`, `GRIB_shortName`, `standard_name`, and `long_name`; raises `KeyError` when no candidate is present.
 - `normalize_time_coord`: renames `valid_time` to `time`, expands scalar time coordinates into a one-item dimension, and sorts by time.
+- `align_wind_to_wave_grid`: selects the finer wind grid onto the wave dataset latitude and longitude coordinates.
 - `direction_degrees_to_unit`: converts degrees to radians with `np.deg2rad`, then returns float32 sine and cosine arrays.
 - `build_valid_initialization_times`: returns every `t0` with complete hourly wind history from `t0 - 23h` through `t0` and every configured wave lead.
 - `chronological_split`: returns three ordered lists with no overlap and raises `ValueError` when any split would be empty.
@@ -257,6 +258,7 @@ Implement these public objects:
 - `NormalizationStats`: frozen dataclass with `input_mean`, `input_std`, `target_mean`, `target_std`, `input_names`, `target_names`, plus an `identity` classmethod for tests.
 - `compute_normalization_stats`: computes finite means and standard deviations from training initialization times, spatial stride, and optional crop.
 - `WindWaveSeq2SeqDataset`: returns a dict with `inputs`, `targets`, `t0`, `input_times`, and `target_times`. Inputs are `[24, 2, H, W]`; targets are `[5, 5, H, W]`.
+- If `pp1d` or `peak_wave_period` is absent in the wave dataset, the dataset uses `mwp` for the peak-period target channel and emits a warning.
 
 - [ ] **Step 4: Run dataset tests and verify green**
 
