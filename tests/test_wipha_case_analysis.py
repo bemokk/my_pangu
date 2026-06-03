@@ -14,6 +14,8 @@ from Buoy.plots.plot_wipha_track_buoy_locations import (
 )
 from Buoy.plots.plot_wipha_buoy_wind_timeseries import (
     TIMESERIES_FORECAST_INIT_TIMES,
+    lead_axis_ticks,
+    prepare_fixed_init_timeseries_data,
     select_fixed_init_timeseries_samples,
     timeseries_time_axis_bounds,
 )
@@ -162,6 +164,7 @@ def test_track_time_labels_in_late_landfall_window_use_land_arrow_labels():
     annotation = track_time_label_annotation(pd.Timestamp("2025-07-20 12:00"), lon=112.0, lat=21.7)
 
     assert annotation["xy"] == (112.0, 21.7)
+    assert annotation["xytext"][0] == 113.1
     assert annotation["xytext"][1] >= 22.3
     assert annotation["arrowprops"]["arrowstyle"] == "->"
     assert annotation["textcoords"] == "data"
@@ -173,6 +176,28 @@ def test_track_time_labels_in_late_landfall_window_are_placed_on_land_side():
 
         assert annotation["xytext"][1] >= 22.3
         assert "arrowprops" in annotation
+
+
+def test_track_time_labels_near_virtual_station_circles_are_shifted_down():
+    label_071912 = track_time_label_annotation(pd.Timestamp("2025-07-19 12:00"), lon=118.0, lat=21.1)
+    label_072000 = track_time_label_annotation(pd.Timestamp("2025-07-20 00:00"), lon=115.8, lat=21.8)
+
+    assert label_071912["xytext"][1] < label_071912["xy"][1]
+    assert label_071912["xytext"] == (117.4, 20.55)
+    assert "arrowprops" in label_071912
+    assert label_072000["xytext"][1] < label_072000["xy"][1]
+    assert label_072000["xytext"] == (115.55, 20.85)
+    assert "arrowprops" in label_072000
+
+
+def test_track_time_labels_late_landfall_labels_are_shifted_left():
+    label_072012 = track_time_label_annotation(pd.Timestamp("2025-07-20 12:00"), lon=114.0, lat=21.8)
+    label_072100 = track_time_label_annotation(pd.Timestamp("2025-07-21 00:00"), lon=112.0, lat=21.7)
+
+    assert label_072012["xytext"][0] < label_072012["xy"][0]
+    assert label_072012["xytext"] == (113.1, 22.8)
+    assert label_072100["xytext"][0] < label_072100["xy"][0]
+    assert label_072100["xytext"] == (110.8, 22.8)
 
 
 def test_track_time_labels_outside_late_landfall_window_use_nearby_labels():
@@ -262,10 +287,48 @@ def test_timeseries_time_axis_bounds_use_actual_fixed_init_data_range():
     assert x_max == pd.Timestamp("2025-07-21 00:00")
 
 
-def test_statistics_table_uses_fixed_init_timeseries_samples():
+def test_lead_axis_ticks_show_forecast_lead_and_valid_utc_time():
+    obs = pd.DataFrame(
+        {
+            "lead_hour": [6, 12],
+            "datetime_utc": pd.to_datetime(["2025-07-18 06:00", "2025-07-18 12:00"]),
+        }
+    )
+    merged = pd.DataFrame(
+        {
+            "lead_hour": [6, 12],
+            "datetime_utc": pd.to_datetime(["2025-07-18 06:00", "2025-07-18 12:00"]),
+        }
+    )
+
+    ticks, lead_labels, utc_labels = lead_axis_ticks(obs, merged)
+
+    assert ticks == [6, 12]
+    assert lead_labels == ["+6h", "+12h"]
+    assert utc_labels == ["07-18 06", "07-18 12"]
+
+
+def test_virtual_station_timeseries_uses_one_representative_record_per_lead():
+    obs, merged = prepare_fixed_init_timeseries_data()
+
+    assert set(obs["platform_id"]) == {"Point 1", "Point 2"}
+    assert set(merged["platform_id"]) == {"Point 1", "Point 2"}
+    assert obs.duplicated(["platform_id", "lead_hour"]).sum() == 0
+    assert merged.duplicated(["platform_id", "lead_hour", "dataset"]).sum() == 0
+    assert obs.groupby("platform_id")["lead_hour"].nunique().to_dict() == {"Point 1": 10, "Point 2": 10}
+    assert set(merged.loc[merged["dataset"] == "gdas_forecast", "pred_start_time"]) == {
+        TIMESERIES_FORECAST_INIT_TIMES["gdas_forecast"]
+    }
+    assert set(merged.loc[merged["dataset"] == "era5_lagged_5d", "pred_start_time"]) == {
+        TIMESERIES_FORECAST_INIT_TIMES["era5_lagged_5d"]
+    }
+
+
+def test_statistics_table_uses_virtual_station_fixed_init_samples():
     merged = prepare_statistics_input()
 
-    assert set(merged["platform_id"]) == {"EVH28KM", "YRZSQRB"}
+    assert set(merged["platform_id"]) == {"Point 1", "Point 2"}
+    assert merged.duplicated(["platform_id", "lead_hour", "dataset"]).sum() == 0
     assert set(merged.loc[merged["dataset"] == "gdas_forecast", "pred_start_time"]) == {
         TIMESERIES_FORECAST_INIT_TIMES["gdas_forecast"]
     }

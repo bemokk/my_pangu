@@ -40,14 +40,14 @@ def plot_statistics_table(stats: pd.DataFrame) -> None:
         "direction_rmse",
     ]
     table = stats[display_cols].copy()
-    table.columns = ["Platform", "Dataset", "N", "Speed MAE", "Speed RMSE", "Speed CC", "Dir MAE", "Dir RMSE"]
+    table.columns = ["Station", "Dataset", "N", "Speed MAE", "Speed RMSE", "Speed CC", "Dir MAE", "Dir RMSE"]
     for col in ["Speed MAE", "Speed RMSE", "Speed CC", "Dir MAE", "Dir RMSE"]:
         table[col] = table[col].map(lambda x: "" if pd.isna(x) else f"{x:.2f}")
 
     fig_height = max(2.6, 0.42 * len(table) + 1.2)
     fig, ax = plt.subplots(figsize=(11.4, fig_height))
     ax.axis("off")
-    ax.set_title("Typhoon Wipha Case Wind Verification Statistics", loc="left", fontweight="bold", pad=12)
+    ax.set_title("Typhoon Wipha Case Virtual Station Wind Verification Statistics", loc="left", fontweight="bold", pad=12)
     tbl = ax.table(cellText=table.values, colLabels=table.columns, loc="center", cellLoc="center")
     tbl.auto_set_font_size(False)
     tbl.set_fontsize(9.2)
