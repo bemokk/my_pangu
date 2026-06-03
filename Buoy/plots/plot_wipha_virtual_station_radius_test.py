@@ -20,21 +20,21 @@ OUT_SVG = FIGURES_DIR / "wipha_virtual_station_radius_test.svg"
 VIRTUAL_STATIONS = [
     {
         "station_id": "VS1",
-        "label": "120E,20N",
-        "lon": 120.0,
-        "lat": 20.0,
-        "radius_km": 200.0,
+        "label": "118.90E,21.32N",
+        "lon": 118.90,
+        "lat": 21.32,
+        "radius_km": 135.0,
         "color": "#C44E52",
-        "unique_times": 11,
+        "unique_times": 10,
     },
     {
         "station_id": "VS2",
-        "label": "115.8E,22.8N",
-        "lon": 115.8,
-        "lat": 22.8,
-        "radius_km": 200.0,
+        "label": "115.64E,22.25N",
+        "lon": 115.64,
+        "lat": 22.25,
+        "radius_km": 110.0,
         "color": "#4C72B0",
-        "unique_times": 14,
+        "unique_times": 10,
     },
 ]
 
@@ -157,7 +157,7 @@ def plot_virtual_station_radius_map() -> None:
     fig.text(
         0.5,
         0.018,
-        "Both circles use 200 km search radii; valid times count distinct 3-hourly matched GDAS and ERA5 lagged samples during 2025-07-18 03 UTC to 2025-07-21 00 UTC.",
+        "Search radii are selected to retain at least 10 distinct 3-hourly matched GDAS and ERA5 lagged samples during 2025-07-18 03 UTC to 2025-07-21 00 UTC.",
         ha="center",
         fontsize=8.5,
         color="#555555",

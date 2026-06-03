@@ -3,8 +3,13 @@
 import pandas as pd
 
 from Buoy.plots.plot_wipha_track_buoy_locations import (
+    VIRTUAL_POINT_STATIONS,
     load_wipha_track_csv,
+    load_virtual_station_common_samples,
     select_six_hour_track_points,
+    select_twelve_hour_track_points,
+    should_label_track_time,
+    summarize_virtual_station_coverage,
     track_time_label_annotation,
 )
 from Buoy.plots.plot_wipha_buoy_wind_timeseries import (
@@ -124,6 +129,35 @@ def test_select_six_hour_track_points_keeps_synoptic_hours():
     assert selected["lon"].tolist() == [127.2, 125.8, 124.3]
 
 
+def test_select_twelve_hour_track_points_keeps_zero_and_twelve_utc():
+    track = pd.DataFrame(
+        {
+            "datetime_utc": pd.to_datetime(
+                [
+                    "2025-07-17 00:00",
+                    "2025-07-17 06:00",
+                    "2025-07-17 12:00",
+                    "2025-07-17 18:00",
+                ]
+            ),
+            "lon": [127.2, 125.8, 124.3, 123.9],
+            "lat": [14.6, 15.2, 16.0, 16.4],
+        }
+    )
+
+    selected = select_twelve_hour_track_points(track)
+
+    assert selected["datetime_utc"].dt.hour.tolist() == [0, 12]
+    assert selected["lon"].tolist() == [127.2, 124.3]
+
+
+def test_track_time_label_rule_only_labels_zero_and_twelve_utc():
+    assert should_label_track_time(pd.Timestamp("2025-07-20 00:00"))
+    assert should_label_track_time(pd.Timestamp("2025-07-20 12:00"))
+    assert not should_label_track_time(pd.Timestamp("2025-07-20 06:00"))
+    assert not should_label_track_time(pd.Timestamp("2025-07-20 18:00"))
+
+
 def test_track_time_labels_in_late_landfall_window_use_land_arrow_labels():
     annotation = track_time_label_annotation(pd.Timestamp("2025-07-20 12:00"), lon=112.0, lat=21.7)
 
@@ -134,7 +168,7 @@ def test_track_time_labels_in_late_landfall_window_use_land_arrow_labels():
 
 
 def test_track_time_labels_in_late_landfall_window_are_placed_on_land_side():
-    for timestamp in pd.date_range("2025-07-20 12:00", "2025-07-22 00:00", freq="6h"):
+    for timestamp in pd.date_range("2025-07-20 12:00", "2025-07-22 00:00", freq="12h"):
         annotation = track_time_label_annotation(timestamp, lon=112.0, lat=21.7)
 
         assert annotation["xytext"][1] >= 22.3
@@ -147,6 +181,23 @@ def test_track_time_labels_outside_late_landfall_window_use_nearby_labels():
     assert annotation["xy"] == (113.5, 21.8)
     assert annotation["xytext"] == (113.65, 21.92)
     assert "arrowprops" not in annotation
+
+
+def test_track_map_virtual_station_coverage_uses_fixed_init_samples():
+    by_id = {station["station_id"]: station for station in VIRTUAL_POINT_STATIONS}
+    summary = summarize_virtual_station_coverage(load_virtual_station_common_samples())
+    rows = {row["station_id"]: row for row in summary.to_dict("records")}
+
+    assert by_id["Point 1"]["lon"] == 118.90
+    assert by_id["Point 1"]["lat"] == 21.32
+    assert by_id["Point 1"]["radius_km"] == 135.0
+    assert rows["Point 1"]["valid_time_count"] == 10
+    assert rows["Point 1"]["record_count"] == 14
+    assert by_id["Point 2"]["lon"] == 115.64
+    assert by_id["Point 2"]["lat"] == 22.25
+    assert by_id["Point 2"]["radius_km"] == 110.0
+    assert rows["Point 2"]["valid_time_count"] == 10
+    assert rows["Point 2"]["record_count"] == 12
 
 
 def test_select_fixed_init_timeseries_samples_keeps_requested_starts_and_three_hour_times():
@@ -226,16 +277,16 @@ def test_statistics_table_uses_fixed_init_timeseries_samples():
 def test_wipha_virtual_station_radius_settings_are_fixed():
     by_id = {station["station_id"]: station for station in VIRTUAL_STATIONS}
 
-    assert by_id["VS1"]["lon"] == 120.0
-    assert by_id["VS1"]["lat"] == 20.0
-    assert by_id["VS1"]["radius_km"] == 200.0
-    assert by_id["VS2"]["lon"] == 115.8
-    assert by_id["VS2"]["lat"] == 22.8
-    assert by_id["VS2"]["radius_km"] == 200.0
+    assert by_id["VS1"]["lon"] == 118.90
+    assert by_id["VS1"]["lat"] == 21.32
+    assert by_id["VS1"]["radius_km"] == 135.0
+    assert by_id["VS2"]["lon"] == 115.64
+    assert by_id["VS2"]["lat"] == 22.25
+    assert by_id["VS2"]["radius_km"] == 110.0
 
 
 def test_geodesic_circle_points_are_closed():
-    points = geodesic_circle_points(120.0, 20.0, 200.0, n_points=13)
+    points = geodesic_circle_points(118.90, 21.32, 135.0, n_points=13)
 
     assert len(points) == 13
     assert points[0] == points[-1]

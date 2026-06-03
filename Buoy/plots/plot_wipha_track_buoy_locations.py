@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -13,25 +14,47 @@ import pandas as pd
 from plots.wipha_case_common import (
     FIGURES_DIR,
     MAP_AREA,
+    MATCHED_CSV,
     OUT_TRACK_BUOYS_PNG,
     OUT_TRACK_BUOYS_SVG,
-    PLATFORM_COLORS,
     PROJECT_ROOT,
     WINDOW_END,
     WINDOW_START,
     ensure_dirs,
-    prepare_buoy_case_data,
+    haversine_km,
     set_plot_style,
 )
 
 LOCAL_WIPHA_TRACK_CSV = PROJECT_ROOT / "typhoon_2506_Wipha.csv"
+TRACK_LABEL_HOURS = {0, 12}
+FIXED_INIT_TIMES = {
+    "gdas_forecast": "2025-07-18-00-00",
+    "era5_lagged_5d": "2025-07-13-00-00",
+}
+VIRTUAL_POINT_STATIONS = [
+    {
+        "station_id": "Point 1",
+        "label": "Point 1",
+        "lon": 118.90,
+        "lat": 21.32,
+        "radius_km": 135.0,
+        "color": "#C44E52",
+        "text_offset": (0.65, 0.82),
+    },
+    {
+        "station_id": "Point 2",
+        "label": "Point 2",
+        "lon": 115.64,
+        "lat": 22.25,
+        "radius_km": 110.0,
+        "color": "#4C72B0",
+        "text_offset": (-1.35, 1.08),
+    },
+]
 LAND_TIME_LABEL_POSITIONS = {
     pd.Timestamp("2025-07-20 12:00"): (114.2, 22.8),
-    pd.Timestamp("2025-07-20 18:00"): (113.0, 22.9),
     pd.Timestamp("2025-07-21 00:00"): (111.8, 22.8),
-    pd.Timestamp("2025-07-21 06:00"): (110.5, 22.7),
     pd.Timestamp("2025-07-21 12:00"): (109.2, 22.7),
-    pd.Timestamp("2025-07-21 18:00"): (108.0, 22.5),
     pd.Timestamp("2025-07-22 00:00"): (107.0, 22.3),
 }
 
@@ -76,6 +99,19 @@ def select_six_hour_track_points(track: pd.DataFrame) -> pd.DataFrame:
     return working[working["datetime_utc"].dt.hour.mod(6).eq(0)].reset_index(drop=True)
 
 
+def select_twelve_hour_track_points(track: pd.DataFrame) -> pd.DataFrame:
+    if track.empty:
+        return track.copy()
+    working = track.copy()
+    working["datetime_utc"] = pd.to_datetime(working["datetime_utc"], errors="coerce")
+    working = working.dropna(subset=["datetime_utc"])
+    return working[working["datetime_utc"].dt.hour.isin(TRACK_LABEL_HOURS)].reset_index(drop=True)
+
+
+def should_label_track_time(datetime_utc: pd.Timestamp) -> bool:
+    return pd.Timestamp(datetime_utc).hour in TRACK_LABEL_HOURS
+
+
 def track_time_label_annotation(datetime_utc: pd.Timestamp, lon: float, lat: float) -> dict:
     timestamp = pd.Timestamp(datetime_utc)
     annotation = {
@@ -111,7 +147,78 @@ def track_time_label_annotation(datetime_utc: pd.Timestamp, lon: float, lat: flo
     return annotation
 
 
-def plot_track_buoy_locations(real_track: pd.DataFrame, obs: pd.DataFrame) -> None:
+def geodesic_circle_points(lon_deg: float, lat_deg: float, radius_km: float, n_points: int = 241) -> list[tuple[float, float]]:
+    if radius_km <= 0:
+        raise ValueError("radius_km must be positive")
+    if n_points < 4:
+        raise ValueError("n_points must be at least 4")
+
+    earth_radius_km = 6371.0
+    angular_distance = radius_km / earth_radius_km
+    lon1 = math.radians(lon_deg)
+    lat1 = math.radians(lat_deg)
+    points = []
+    for index in range(n_points):
+        bearing = 2.0 * math.pi * index / (n_points - 1)
+        lat2 = math.asin(
+            math.sin(lat1) * math.cos(angular_distance)
+            + math.cos(lat1) * math.sin(angular_distance) * math.cos(bearing)
+        )
+        lon2 = lon1 + math.atan2(
+            math.sin(bearing) * math.sin(angular_distance) * math.cos(lat1),
+            math.cos(angular_distance) - math.sin(lat1) * math.sin(lat2),
+        )
+        lon_out = (math.degrees(lon2) + 540.0) % 360.0 - 180.0
+        points.append((lon_out, math.degrees(lat2)))
+    return points
+
+
+def load_virtual_station_common_samples(matched_csv: Path = MATCHED_CSV) -> pd.DataFrame:
+    cols = ["record_id", "dataset", "pred_start_time", "lead_hour", "datetime_utc", "longitude", "latitude", "platform_id"]
+    df = pd.read_csv(matched_csv, usecols=cols)
+    df["datetime_utc"] = pd.to_datetime(df["datetime_utc"])
+    dataset_filter = False
+    for dataset, start_time in FIXED_INIT_TIMES.items():
+        dataset_filter = dataset_filter | ((df["dataset"] == dataset) & (df["pred_start_time"] == start_time))
+    df = df.loc[
+        dataset_filter
+        & df["lead_hour"].between(3, 72)
+        & df["lead_hour"].mod(3).eq(0)
+    ].copy()
+    keys = ["datetime_utc", "record_id", "platform_id", "longitude", "latitude"]
+    wide = df.groupby(keys + ["dataset"]).size().unstack(fill_value=0).reset_index()
+    return wide[
+        (wide.get("gdas_forecast", 0) > 0)
+        & (wide.get("era5_lagged_5d", 0) > 0)
+    ].reset_index(drop=True)
+
+
+def summarize_virtual_station_coverage(
+    common_samples: pd.DataFrame,
+    stations: list[dict] = VIRTUAL_POINT_STATIONS,
+) -> pd.DataFrame:
+    rows = []
+    for station in stations:
+        sub = common_samples[
+            common_samples.apply(
+                lambda row: haversine_km(station["lon"], station["lat"], row["longitude"], row["latitude"])
+                <= station["radius_km"],
+                axis=1,
+            )
+        ].copy()
+        rows.append(
+            {
+                "station_id": station["station_id"],
+                "valid_time_count": int(sub["datetime_utc"].nunique()),
+                "record_count": int(len(sub)),
+                "platform_count": int(sub["platform_id"].nunique()),
+                "valid_times": sorted(pd.to_datetime(sub["datetime_utc"]).unique()),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def plot_track_buoy_locations(real_track: pd.DataFrame, station_summary: pd.DataFrame) -> None:
     import cartopy.crs as ccrs
     import cartopy.feature as cfeature
 
@@ -146,7 +253,7 @@ def plot_track_buoy_locations(real_track: pd.DataFrame, obs: pd.DataFrame) -> No
     )
     gl.top_labels = False
     gl.right_labels = False
-    ax.set_title("Typhoon Wipha Track and Selected Platform Locations", loc="left", fontweight="bold")
+    ax.set_title("Typhoon Wipha Track and Virtual Station Search Areas", loc="left", fontweight="bold")
 
     case_track = real_track[real_track["datetime_utc"].between(WINDOW_START, WINDOW_END)]
     case_track = select_six_hour_track_points(case_track)
@@ -158,14 +265,13 @@ def plot_track_buoy_locations(real_track: pd.DataFrame, obs: pd.DataFrame) -> No
             linewidth=2.0,
             marker="o",
             markersize=3.5,
-            label="Observed Wipha track (6-hourly)",
+            label="Observed Wipha track (6-hourly; labels 12-hourly)",
             transform=projection,
             zorder=5,
         )
-        default_label_indices = set(range(0, len(case_track), max(1, len(case_track) // 8)))
-        for label_index, (_, row) in enumerate(case_track.iterrows()):
+        for _, row in case_track.iterrows():
             timestamp = pd.Timestamp(row["datetime_utc"])
-            if label_index not in default_label_indices and timestamp not in LAND_TIME_LABEL_POSITIONS:
+            if not should_label_track_time(timestamp):
                 continue
 
             annotation = track_time_label_annotation(timestamp, lon=row["lon"], lat=row["lat"])
@@ -194,23 +300,32 @@ def plot_track_buoy_locations(real_track: pd.DataFrame, obs: pd.DataFrame) -> No
                     zorder=6,
                 )
 
-    for platform_id, sub in obs.groupby("platform_id"):
-        color = PLATFORM_COLORS.get(platform_id, "#777777")
-        ax.scatter(
-            sub["longitude"],
-            sub["latitude"],
-            s=22,
-            alpha=0.45,
+    summary_by_id = station_summary.set_index("station_id").to_dict("index")
+    for station in VIRTUAL_POINT_STATIONS:
+        color = station["color"]
+        circle = geodesic_circle_points(station["lon"], station["lat"], station["radius_km"])
+        circle_lons = [point[0] for point in circle]
+        circle_lats = [point[1] for point in circle]
+        ax.plot(
+            circle_lons,
+            circle_lats,
             color=color,
-            edgecolor="none",
-            label=f"{platform_id} positions",
+            linewidth=1.6,
+            label=f"{station['label']} radius {station['radius_km']:.0f} km",
             transform=projection,
             zorder=4,
         )
-        mean_lon, mean_lat = sub["longitude"].mean(), sub["latitude"].mean()
+        ax.fill(
+            circle_lons,
+            circle_lats,
+            color=color,
+            alpha=0.12,
+            transform=projection,
+            zorder=3,
+        )
         ax.scatter(
-            [mean_lon],
-            [mean_lat],
+            [station["lon"]],
+            [station["lat"]],
             marker="*",
             s=180,
             color=color,
@@ -219,13 +334,23 @@ def plot_track_buoy_locations(real_track: pd.DataFrame, obs: pd.DataFrame) -> No
             transform=projection,
             zorder=7,
         )
+        summary = summary_by_id.get(station["station_id"], {})
+        valid_time_count = int(summary.get("valid_time_count", 0))
+        record_count = int(summary.get("record_count", 0))
+        dx, dy = station["text_offset"]
         ax.text(
-            mean_lon + 0.25,
-            mean_lat + 0.25,
-            platform_id,
+            station["lon"] + dx,
+            station["lat"] + dy,
+            (
+                f"{station['label']} {station['lon']:.2f}E,{station['lat']:.2f}N\n"
+                f"R={station['radius_km']:.0f} km\n"
+                f"{valid_time_count} valid times, {record_count} records"
+            ),
             color=color,
             fontweight="bold",
+            fontsize=8.2,
             transform=projection,
+            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.82, "pad": 2.0},
             zorder=8,
         )
 
@@ -233,7 +358,7 @@ def plot_track_buoy_locations(real_track: pd.DataFrame, obs: pd.DataFrame) -> No
     fig.text(
         0.5,
         0.015,
-        "Typhoon track is read from typhoon_2506_Wipha.csv and plotted at 6-hour intervals; platform points show observations during 2025-07-17 00 UTC to 2025-07-22 23 UTC.",
+        "Typhoon track is read from typhoon_2506_Wipha.csv; virtual station counts use matched GDAS and ERA5 lagged samples at fixed-init 3-hourly target times.",
         ha="center",
         fontsize=8.8,
         color="#555555",
@@ -246,9 +371,10 @@ def plot_track_buoy_locations(real_track: pd.DataFrame, obs: pd.DataFrame) -> No
 
 def generate() -> list[Path]:
     ensure_dirs()
-    obs, _, _ = prepare_buoy_case_data()
     real_track = load_wipha_track_csv()
-    plot_track_buoy_locations(real_track, obs)
+    common_samples = load_virtual_station_common_samples()
+    station_summary = summarize_virtual_station_coverage(common_samples)
+    plot_track_buoy_locations(real_track, station_summary)
     return [OUT_TRACK_BUOYS_PNG, OUT_TRACK_BUOYS_SVG]
 
 
