@@ -27,3 +27,14 @@ def test_chronological_split_preserves_order_and_no_overlap():
     assert len(val) == 3
     assert len(test) == 3
     assert train[-1] < val[0] < test[0]
+
+
+def test_chronological_split_keeps_each_split_nonempty_for_smoke_test():
+    times = pd.date_range("2025-01-01", periods=4, freq="h")
+
+    train, val, test = chronological_split(times)
+
+    assert len(train) == 2
+    assert len(val) == 1
+    assert len(test) == 1
+    assert train[-1] < val[0] < test[0]

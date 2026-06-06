@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-import warnings
 
 import numpy as np
 import pandas as pd
@@ -13,11 +12,13 @@ from torch.utils.data import Dataset
 
 from .config import DEFAULT_HISTORY_HOURS, DEFAULT_LEAD_HOURS
 from .era5 import (
+    Region,
     direction_degrees_to_unit,
     drop_extra_dims,
     find_data_var,
     normalize_spatial_coords,
     normalize_time_coord,
+    select_region,
 )
 
 
@@ -29,11 +30,6 @@ WIND_CANDIDATES = {
 WAVE_CANDIDATES = {
     "swh": ("swh", "significant_height_of_combined_wind_waves_and_swell"),
     "mwp": ("mwp", "mean_wave_period"),
-    "pp1d": (
-        "pp1d",
-        "peak_wave_period",
-        "peak_wave_period_of_combined_wind_waves_and_swell",
-    ),
     "mwd": ("mwd", "mean_wave_direction"),
 }
 
@@ -92,9 +88,17 @@ def open_dataset(path: Path) -> xr.Dataset:
     return ds
 
 
-def _spatial_indexer(ds: xr.Dataset, spatial_stride: int, crop_size: int | None) -> xr.Dataset:
+def _spatial_indexer(
+    ds: xr.Dataset,
+    spatial_stride: int,
+    crop_size: int | None,
+    region: Region | None,
+) -> xr.Dataset:
     if spatial_stride < 1:
         raise ValueError("spatial_stride must be >= 1")
+
+    if region is not None:
+        ds = select_region(ds, region)
 
     ds = ds.isel(
         latitude=slice(None, None, spatial_stride),
@@ -114,9 +118,10 @@ def _select_wind_array(
     times: list[pd.Timestamp],
     spatial_stride: int,
     crop_size: int | None,
+    region: Region | None,
 ) -> np.ndarray:
     names = [find_data_var(wind_ds, WIND_CANDIDATES[key]) for key in ("u10", "v10")]
-    sliced = _spatial_indexer(wind_ds[names].sel(time=times), spatial_stride, crop_size)
+    sliced = _spatial_indexer(wind_ds[names].sel(time=times), spatial_stride, crop_size, region)
     arrays = [
         sliced[name].transpose("time", "latitude", "longitude").values.astype(np.float32)
         for name in names
@@ -129,29 +134,19 @@ def _select_wave_array(
     times: list[pd.Timestamp],
     spatial_stride: int,
     crop_size: int | None,
+    region: Region | None,
 ) -> np.ndarray:
     names = {
         key: find_data_var(wave_ds, candidates)
         for key, candidates in WAVE_CANDIDATES.items()
-        if key != "pp1d"
     }
-    try:
-        names["pp1d"] = find_data_var(wave_ds, WAVE_CANDIDATES["pp1d"])
-    except KeyError:
-        names["pp1d"] = names["mwp"]
-        warnings.warn(
-            "Peak wave period was not found; using mean wave period for the pp1d target channel.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-    sliced = _spatial_indexer(wave_ds[list(names.values())].sel(time=times), spatial_stride, crop_size)
+    sliced = _spatial_indexer(wave_ds[list(names.values())].sel(time=times), spatial_stride, crop_size, region)
 
     swh = sliced[names["swh"]].transpose("time", "latitude", "longitude").values.astype(np.float32)
     mwp = sliced[names["mwp"]].transpose("time", "latitude", "longitude").values.astype(np.float32)
-    pp1d = sliced[names["pp1d"]].transpose("time", "latitude", "longitude").values.astype(np.float32)
     mwd = sliced[names["mwd"]].transpose("time", "latitude", "longitude").values.astype(np.float32)
     sin_mwd, cos_mwd = direction_degrees_to_unit(mwd)
-    return np.stack([swh, mwp, pp1d, sin_mwd, cos_mwd], axis=1)
+    return np.stack([swh, mwp, cos_mwd, sin_mwd], axis=1)
 
 
 def _history_times(t0: pd.Timestamp, history_hours: int) -> list[pd.Timestamp]:
@@ -189,15 +184,17 @@ def compute_normalization_stats(
     initialization_times: list[pd.Timestamp],
     spatial_stride: int = 1,
     crop_size: int | None = None,
+    input_region: Region | None = None,
+    output_region: Region | None = None,
     history_hours: int = DEFAULT_HISTORY_HOURS,
     lead_hours: tuple[int, ...] = DEFAULT_LEAD_HOURS,
 ) -> NormalizationStats:
     input_sum = np.zeros(2, dtype=np.float64)
     input_sumsq = np.zeros(2, dtype=np.float64)
     input_count = np.zeros(2, dtype=np.int64)
-    target_sum = np.zeros(5, dtype=np.float64)
-    target_sumsq = np.zeros(5, dtype=np.float64)
-    target_count = np.zeros(5, dtype=np.int64)
+    target_sum = np.zeros(4, dtype=np.float64)
+    target_sumsq = np.zeros(4, dtype=np.float64)
+    target_count = np.zeros(4, dtype=np.int64)
 
     for raw_t0 in initialization_times:
         t0 = pd.Timestamp(raw_t0)
@@ -206,12 +203,14 @@ def compute_normalization_stats(
             _history_times(t0, history_hours),
             spatial_stride,
             crop_size,
+            input_region,
         )
         targets = _select_wave_array(
             wave_ds,
             _lead_times(t0, lead_hours),
             spatial_stride,
             crop_size,
+            output_region,
         )
         _accumulate(input_sum, input_sumsq, input_count, inputs)
         _accumulate(target_sum, target_sumsq, target_count, targets)
@@ -225,7 +224,7 @@ def compute_normalization_stats(
         target_mean=target_mean,
         target_std=target_std,
         input_names=("u10", "v10"),
-        target_names=("swh", "mwp", "pp1d", "sin_mwd", "cos_mwd"),
+        target_names=("swh", "mwp", "cos_mwd", "sin_mwd"),
     )
 
 
@@ -240,6 +239,8 @@ class WindWaveSeq2SeqDataset(Dataset):
         lead_hours: tuple[int, ...] = DEFAULT_LEAD_HOURS,
         spatial_stride: int = 1,
         crop_size: int | None = None,
+        input_region: Region | None = None,
+        output_region: Region | None = None,
     ) -> None:
         self.wind_ds = wind_ds
         self.wave_ds = wave_ds
@@ -249,6 +250,8 @@ class WindWaveSeq2SeqDataset(Dataset):
         self.lead_hours = tuple(lead_hours)
         self.spatial_stride = spatial_stride
         self.crop_size = crop_size
+        self.input_region = input_region
+        self.output_region = output_region
 
     def __len__(self) -> int:
         return len(self.initialization_times)
@@ -263,12 +266,14 @@ class WindWaveSeq2SeqDataset(Dataset):
             input_times,
             self.spatial_stride,
             self.crop_size,
+            self.input_region,
         )
         targets = _select_wave_array(
             self.wave_ds,
             target_times,
             self.spatial_stride,
             self.crop_size,
+            self.output_region,
         )
 
         inputs = (inputs - self.stats.input_mean[None, :, None, None]) / self.stats.input_std[

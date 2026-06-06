@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 
 class ConvLSTMCell(nn.Module):
@@ -82,7 +83,7 @@ class ConvLSTMWindWaveModel(nn.Module):
         input_channels: int = 2,
         hidden_channels: int = 32,
         lead_count: int = 5,
-        target_channels: int = 5,
+        target_channels: int = 4,
         layers: int = 1,
     ) -> None:
         super().__init__()
@@ -104,7 +105,9 @@ class ConvLSTMWindWaveModel(nn.Module):
             ]
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, output_size: tuple[int, int] | None = None) -> torch.Tensor:
         encoded = self.encoder(x)
+        if output_size is not None and encoded.shape[-2:] != tuple(output_size):
+            encoded = F.interpolate(encoded, size=output_size, mode="bilinear", align_corners=False)
         outputs = [head(encoded) for head in self.heads]
         return torch.stack(outputs, dim=1)

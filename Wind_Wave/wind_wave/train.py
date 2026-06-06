@@ -14,7 +14,9 @@ from torch.utils.data import DataLoader
 
 from .config import (
     DEFAULT_HISTORY_HOURS,
+    DEFAULT_INPUT_REGION,
     DEFAULT_LEAD_HOURS,
+    DEFAULT_OUTPUT_REGION,
     extracted_data_dir,
     outputs_dir,
     raw_data_dir,
@@ -25,7 +27,12 @@ from .dataset import (
     compute_normalization_stats,
     open_dataset,
 )
-from .era5 import align_wind_to_wave_grid
+from .era5 import (
+    drop_extra_dims,
+    normalize_spatial_coords,
+    normalize_time_coord,
+    parse_region,
+)
 from .extract import ExtractedPair, extract_archives
 from .indexing import build_valid_initialization_times, chronological_split
 from .losses import masked_mse_loss
@@ -56,6 +63,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-archives", type=int, default=None)
     parser.add_argument("--spatial-stride", type=int, default=1)
     parser.add_argument("--crop-size", type=int, default=None)
+    parser.add_argument("--input-region", default=DEFAULT_INPUT_REGION)
+    parser.add_argument("--output-region", default=DEFAULT_OUTPUT_REGION)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
     return parser
@@ -67,19 +76,43 @@ def _device_from_arg(value: str) -> torch.device:
     return torch.device(value)
 
 
-def _deduplicate_time(ds: xr.Dataset) -> xr.Dataset:
-    times = pd.to_datetime(ds["time"].values)
-    _, first_indices = np.unique(times, return_index=True)
-    return ds.isel(time=sorted(first_indices)).sortby("time")
+def _preprocess_multifile_dataset(ds: xr.Dataset) -> xr.Dataset:
+    ds = normalize_time_coord(ds)
+    ds = normalize_spatial_coords(ds)
+    return drop_extra_dims(ds)
+
+
+def _open_many(paths: Sequence[Path]) -> xr.Dataset:
+    if not paths:
+        raise ValueError("At least one dataset path is required")
+    if len(paths) == 1:
+        return open_dataset(paths[0])
+
+    combined = xr.open_mfdataset(
+        paths,
+        engine="netcdf4",
+        combine="nested",
+        concat_dim="time",
+        data_vars="minimal",
+        coords="minimal",
+        compat="override",
+        join="exact",
+        chunks={},
+        preprocess=_preprocess_multifile_dataset,
+    )
+    times = pd.Index(pd.to_datetime(combined["time"].values))
+    if times.has_duplicates:
+        keep = ~times.duplicated(keep="first")
+        combined = combined.isel(time=keep)
+        times = times[keep]
+    if not times.is_monotonic_increasing:
+        combined = combined.sortby("time")
+    return combined
 
 
 def _open_pairs(pairs: list[ExtractedPair]) -> tuple[xr.Dataset, xr.Dataset]:
-    wind_parts = [open_dataset(pair.oper_nc) for pair in pairs]
-    wave_parts = [open_dataset(pair.wave_nc) for pair in pairs]
-    wind = _deduplicate_time(xr.concat(wind_parts, dim="time")).sortby("time")
-    wave = _deduplicate_time(xr.concat(wave_parts, dim="time")).sortby("time")
-
-    wind = align_wind_to_wave_grid(wind, wave)
+    wind = _open_many([pair.oper_nc for pair in pairs])
+    wave = _open_many([pair.wave_nc for pair in pairs])
     return wind, wave
 
 
@@ -126,6 +159,8 @@ def _make_loader(
         lead_hours=lead_hours,
         spatial_stride=args.spatial_stride,
         crop_size=args.crop_size,
+        input_region=parse_region(args.input_region),
+        output_region=parse_region(args.output_region),
     )
     return DataLoader(
         dataset,
@@ -152,13 +187,13 @@ def _evaluate_loader(
     losses = []
     metric_rows = []
     per_lead: dict[int, dict[str, list[float]]] = {
-        lead: {"swh": [], "mwp": [], "pp1d": [], "mwd": []} for lead in lead_hours
+        lead: {"swh": [], "mwp": [], "mwd": []} for lead in lead_hours
     }
     with torch.no_grad():
         for batch in loader:
             inputs = batch["inputs"].to(device)
             targets = batch["targets"].to(device)
-            predictions = model(inputs)
+            predictions = model(inputs, output_size=tuple(targets.shape[-2:]))
             loss = masked_mse_loss(predictions, targets)
             losses.append(float(loss.detach().cpu()))
 
@@ -167,14 +202,13 @@ def _evaluate_loader(
             for lead_index, lead in enumerate(lead_hours):
                 per_lead[lead]["swh"].append(float(rmse(pred_raw[:, lead_index, 0], target_raw[:, lead_index, 0]).cpu()))
                 per_lead[lead]["mwp"].append(float(rmse(pred_raw[:, lead_index, 1], target_raw[:, lead_index, 1]).cpu()))
-                per_lead[lead]["pp1d"].append(float(rmse(pred_raw[:, lead_index, 2], target_raw[:, lead_index, 2]).cpu()))
                 per_lead[lead]["mwd"].append(
                     float(
                         circular_mae_degrees(
                             pred_raw[:, lead_index, 3],
-                            pred_raw[:, lead_index, 4],
+                            pred_raw[:, lead_index, 2],
                             target_raw[:, lead_index, 3],
-                            target_raw[:, lead_index, 4],
+                            target_raw[:, lead_index, 2],
                         ).cpu()
                     )
                 )
@@ -185,7 +219,6 @@ def _evaluate_loader(
                 "lead_hour": lead,
                 "rmse_swh": float(np.mean(values["swh"])),
                 "rmse_mwp": float(np.mean(values["mwp"])),
-                "rmse_pp1d": float(np.mean(values["pp1d"])),
                 "mae_mwd_degrees": float(np.mean(values["mwd"])),
             }
         )
@@ -232,6 +265,8 @@ def train(args: argparse.Namespace) -> dict[str, float]:
         train_times,
         spatial_stride=args.spatial_stride,
         crop_size=args.crop_size,
+        input_region=parse_region(args.input_region),
+        output_region=parse_region(args.output_region),
         history_hours=args.history_hours,
         lead_hours=lead_hours,
     )
@@ -246,7 +281,7 @@ def train(args: argparse.Namespace) -> dict[str, float]:
         input_channels=2,
         hidden_channels=args.hidden_channels,
         lead_count=len(lead_hours),
-        target_channels=5,
+        target_channels=4,
     ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
 
@@ -261,7 +296,7 @@ def train(args: argparse.Namespace) -> dict[str, float]:
             inputs = batch["inputs"].to(device)
             targets = batch["targets"].to(device)
             optimizer.zero_grad(set_to_none=True)
-            predictions = model(inputs)
+            predictions = model(inputs, output_size=tuple(targets.shape[-2:]))
             loss = masked_mse_loss(predictions, targets)
             loss.backward()
             optimizer.step()
@@ -279,6 +314,9 @@ def train(args: argparse.Namespace) -> dict[str, float]:
             "lead_hours": lead_hours,
             "history_hours": args.history_hours,
             "hidden_channels": args.hidden_channels,
+            "target_channels": 4,
+            "input_region": args.input_region,
+            "output_region": args.output_region,
         }
         torch.save(checkpoint, checkpoint_dir / "seq2seq_convlstm_latest.pt")
         if val_loss < best_val:
@@ -292,7 +330,11 @@ def train(args: argparse.Namespace) -> dict[str, float]:
     preview_batch = next(iter(preview_loader))
     model.eval()
     with torch.no_grad():
-        preview_pred = model(preview_batch["inputs"].to(device))
+        preview_targets = preview_batch["targets"]
+        preview_pred = model(
+            preview_batch["inputs"].to(device),
+            output_size=tuple(preview_targets.shape[-2:]),
+        )
     _write_preview(
         sample_dir / "predictions_preview.npz",
         sample_dir / "sample_metadata.csv",

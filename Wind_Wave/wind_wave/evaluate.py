@@ -42,7 +42,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, float]:
         input_channels=2,
         hidden_channels=int(checkpoint["hidden_channels"]),
         lead_count=len(lead_hours),
-        target_channels=5,
+        target_channels=int(checkpoint.get("target_channels", 4)),
     ).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
 

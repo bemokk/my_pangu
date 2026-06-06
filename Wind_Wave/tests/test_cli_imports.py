@@ -8,6 +8,8 @@ def test_train_parser_defaults_match_seq2seq_design():
     assert args.history_hours == 24
     assert args.lead_hours == "6,12,24,48,72"
     assert args.batch_size == 1
+    assert args.input_region == "5,45,95,150"
+    assert args.output_region == "15,40,105,135"
 
 
 def test_eval_parser_accepts_checkpoint_argument():

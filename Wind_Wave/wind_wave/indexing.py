@@ -37,8 +37,11 @@ def chronological_split(
     if len(ordered) < 3:
         raise ValueError("Need at least three times for train, validation, and test splits")
 
-    train_end = int(len(ordered) * train_fraction)
-    val_end = train_end + int(len(ordered) * val_fraction)
+    train_end = max(1, min(len(ordered) - 2, int(len(ordered) * train_fraction)))
+    val_end = max(
+        train_end + 1,
+        min(len(ordered) - 1, train_end + int(len(ordered) * val_fraction)),
+    )
 
     train = ordered[:train_end]
     val = ordered[train_end:val_end]

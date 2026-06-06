@@ -4,9 +4,11 @@ from pathlib import Path
 
 
 INPUT_VARIABLES = ("u10", "v10")
-TARGET_VARIABLES = ("swh", "mwp", "pp1d", "sin_mwd", "cos_mwd")
+TARGET_VARIABLES = ("swh", "mwp", "cos_mwd", "sin_mwd")
 DEFAULT_HISTORY_HOURS = 24
 DEFAULT_LEAD_HOURS = (6, 12, 24, 48, 72)
+DEFAULT_INPUT_REGION = "5,45,95,150"
+DEFAULT_OUTPUT_REGION = "15,40,105,135"
 
 
 def project_root() -> Path:

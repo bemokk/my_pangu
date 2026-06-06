@@ -3,10 +3,13 @@ import pandas as pd
 import xarray as xr
 
 from wind_wave.era5 import (
+    Region,
     align_wind_to_wave_grid,
     direction_degrees_to_unit,
     find_data_var,
     normalize_time_coord,
+    parse_region,
+    select_region,
 )
 
 
@@ -74,3 +77,25 @@ def test_align_wind_to_wave_grid_subsets_finer_wind_grid():
     assert aligned.sizes["longitude"] == 3
     np.testing.assert_allclose(aligned["latitude"].values, wave["latitude"].values)
     np.testing.assert_allclose(aligned["longitude"].values, wave["longitude"].values)
+
+
+def test_parse_region_uses_south_north_west_east_order():
+    region = parse_region("5,45,95,150")
+
+    assert region == Region(south=5.0, north=45.0, west=95.0, east=150.0)
+
+
+def test_select_region_handles_descending_latitude_and_ascending_longitude():
+    ds = xr.Dataset(
+        {"u10": (("time", "latitude", "longitude"), np.zeros((1, 11, 14)))},
+        coords={
+            "time": pd.date_range("2025-01-01", periods=1),
+            "latitude": np.arange(50.0, -5.0, -5.0),
+            "longitude": np.arange(90.0, 160.0, 5.0),
+        },
+    )
+
+    selected = select_region(ds, Region(south=15.0, north=40.0, west=105.0, east=135.0))
+
+    np.testing.assert_allclose(selected["latitude"].values, np.array([40.0, 35.0, 30.0, 25.0, 20.0, 15.0]))
+    np.testing.assert_allclose(selected["longitude"].values, np.array([105.0, 110.0, 115.0, 120.0, 125.0, 130.0, 135.0]))
