@@ -10,6 +10,7 @@ def test_train_parser_defaults_match_seq2seq_design():
     assert args.batch_size == 1
     assert args.input_region == "5,45,95,150"
     assert args.output_region == "15,40,105,135"
+    assert args.preload_spatial is False
 
 
 def test_eval_parser_accepts_checkpoint_argument():

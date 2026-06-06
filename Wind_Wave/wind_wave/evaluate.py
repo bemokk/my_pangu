@@ -14,6 +14,7 @@ from .train import (
     _device_from_arg,
     _evaluate_loader,
     _make_loader,
+    _preload_spatial_datasets,
     _prepare_datasets,
     _write_csv,
     build_arg_parser as build_train_arg_parser,
@@ -37,7 +38,10 @@ def evaluate(args: argparse.Namespace) -> dict[str, float]:
 
     wind, wave, initialization_times, _ = _prepare_datasets(args)
     _, _, test_times = chronological_split(initialization_times)
-    loader = _make_loader(wind, wave, test_times, stats, args, lead_hours, shuffle=False)
+    data_args = args
+    if args.preload_spatial:
+        wind, wave, data_args = _preload_spatial_datasets(wind, wave, args)
+    loader = _make_loader(wind, wave, test_times, stats, data_args, lead_hours, shuffle=False)
     model = ConvLSTMWindWaveModel(
         input_channels=2,
         hidden_channels=int(checkpoint["hidden_channels"]),

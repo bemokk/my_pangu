@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -168,6 +169,28 @@ def _accumulate(sum_v: np.ndarray, sumsq_v: np.ndarray, count_v: np.ndarray, arr
     count_v += finite.sum(axis=1)
 
 
+def _accumulate_weighted(
+    sum_v: np.ndarray,
+    sumsq_v: np.ndarray,
+    count_v: np.ndarray,
+    arr: np.ndarray,
+    time_weights: np.ndarray,
+) -> None:
+    weights = np.asarray(time_weights, dtype=np.int64)[:, None, None, None]
+    finite = np.isfinite(arr)
+    values = np.where(finite, arr, 0.0)
+    sum_v += (values * weights).sum(axis=(0, 2, 3))
+    sumsq_v += (values * values * weights).sum(axis=(0, 2, 3))
+    count_v += (finite * weights).sum(axis=(0, 2, 3))
+
+
+def _unique_times_and_counts(times: list[pd.Timestamp]) -> tuple[list[pd.Timestamp], np.ndarray]:
+    counts = Counter(pd.Timestamp(value) for value in times)
+    unique_times = sorted(counts)
+    weights = np.asarray([counts[value] for value in unique_times], dtype=np.int64)
+    return unique_times, weights
+
+
 def _finalize_stats(sum_v: np.ndarray, sumsq_v: np.ndarray, count_v: np.ndarray, label: str) -> tuple[np.ndarray, np.ndarray]:
     if np.any(count_v == 0):
         raise ValueError(f"Cannot compute {label} normalization without finite values")
@@ -196,24 +219,49 @@ def compute_normalization_stats(
     target_sumsq = np.zeros(4, dtype=np.float64)
     target_count = np.zeros(4, dtype=np.int64)
 
+    input_times = []
+    target_times = []
     for raw_t0 in initialization_times:
         t0 = pd.Timestamp(raw_t0)
+        input_times.extend(_history_times(t0, history_hours))
+        target_times.extend(_lead_times(t0, lead_hours))
+
+    unique_input_times, input_weights = _unique_times_and_counts(input_times)
+    unique_target_times, target_weights = _unique_times_and_counts(target_times)
+    time_chunk_size = 256
+    for start in range(0, len(unique_input_times), time_chunk_size):
+        end = start + time_chunk_size
         inputs = _select_wind_array(
             wind_ds,
-            _history_times(t0, history_hours),
+            unique_input_times[start:end],
             spatial_stride,
             crop_size,
             input_region,
         )
+        _accumulate_weighted(
+            input_sum,
+            input_sumsq,
+            input_count,
+            inputs,
+            input_weights[start:end],
+        )
+
+    for start in range(0, len(unique_target_times), time_chunk_size):
+        end = start + time_chunk_size
         targets = _select_wave_array(
             wave_ds,
-            _lead_times(t0, lead_hours),
+            unique_target_times[start:end],
             spatial_stride,
             crop_size,
             output_region,
         )
-        _accumulate(input_sum, input_sumsq, input_count, inputs)
-        _accumulate(target_sum, target_sumsq, target_count, targets)
+        _accumulate_weighted(
+            target_sum,
+            target_sumsq,
+            target_count,
+            targets,
+            target_weights[start:end],
+        )
 
     input_mean, input_std = _finalize_stats(input_sum, input_sumsq, input_count, "input")
     target_mean, target_std = _finalize_stats(target_sum, target_sumsq, target_count, "target")

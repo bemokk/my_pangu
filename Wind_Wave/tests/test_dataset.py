@@ -3,9 +3,14 @@ import pandas as pd
 import pytest
 import xarray as xr
 
+import wind_wave.dataset as dataset_module
 from wind_wave.dataset import (
     NormalizationStats,
     WindWaveSeq2SeqDataset,
+    _history_times,
+    _lead_times,
+    _select_wave_array,
+    _select_wind_array,
     compute_normalization_stats,
 )
 from wind_wave.era5 import Region
@@ -90,3 +95,94 @@ def test_compute_normalization_stats_rejects_all_nan_values():
             input_region=Region(south=5.0, north=45.0, west=95.0, east=150.0),
             output_region=Region(south=15.0, north=40.0, west=105.0, east=135.0),
         )
+
+
+def test_compute_normalization_stats_reads_unique_times_in_batches(monkeypatch):
+    wind, wave = make_synthetic_pair()
+    initialization_times = [
+        pd.Timestamp("2025-01-02T00:00"),
+        pd.Timestamp("2025-01-02T01:00"),
+        pd.Timestamp("2025-01-02T02:00"),
+    ]
+    call_counts = {"wind": 0, "wave": 0}
+    original_select_wind = dataset_module._select_wind_array
+    original_select_wave = dataset_module._select_wave_array
+
+    def count_wind_calls(*args, **kwargs):
+        call_counts["wind"] += 1
+        return original_select_wind(*args, **kwargs)
+
+    def count_wave_calls(*args, **kwargs):
+        call_counts["wave"] += 1
+        return original_select_wave(*args, **kwargs)
+
+    monkeypatch.setattr(dataset_module, "_select_wind_array", count_wind_calls)
+    monkeypatch.setattr(dataset_module, "_select_wave_array", count_wave_calls)
+
+    compute_normalization_stats(
+        wind,
+        wave,
+        initialization_times=initialization_times,
+        spatial_stride=2,
+        history_hours=2,
+        lead_hours=(1, 2),
+    )
+
+    assert call_counts == {"wind": 1, "wave": 1}
+
+
+def test_compute_normalization_stats_preserves_repeated_window_weighting():
+    wind, wave = make_synthetic_pair()
+    initialization_times = [
+        pd.Timestamp("2025-01-02T00:00"),
+        pd.Timestamp("2025-01-02T01:00"),
+    ]
+    history_hours = 2
+    lead_hours = (1, 2)
+    inputs = np.concatenate(
+        [
+            _select_wind_array(
+                wind,
+                _history_times(t0, history_hours),
+                spatial_stride=2,
+                crop_size=None,
+                region=None,
+            )
+            for t0 in initialization_times
+        ],
+        axis=0,
+    )
+    targets = np.concatenate(
+        [
+            _select_wave_array(
+                wave,
+                _lead_times(t0, lead_hours),
+                spatial_stride=2,
+                crop_size=None,
+                region=None,
+            )
+            for t0 in initialization_times
+        ],
+        axis=0,
+    )
+
+    stats = compute_normalization_stats(
+        wind,
+        wave,
+        initialization_times=initialization_times,
+        spatial_stride=2,
+        history_hours=history_hours,
+        lead_hours=lead_hours,
+    )
+
+    np.testing.assert_allclose(stats.input_mean, np.nanmean(inputs, axis=(0, 2, 3)))
+    np.testing.assert_allclose(
+        stats.input_std,
+        np.nanstd(inputs, axis=(0, 2, 3)),
+        rtol=1e-4,
+        atol=1e-3,
+    )
+    np.testing.assert_allclose(stats.target_mean, np.nanmean(targets, axis=(0, 2, 3)))
+    expected_target_std = np.nanstd(targets, axis=(0, 2, 3))
+    expected_target_std = np.where(expected_target_std < 1e-6, 1.0, expected_target_std)
+    np.testing.assert_allclose(stats.target_std, expected_target_std, rtol=1e-4, atol=1e-3)

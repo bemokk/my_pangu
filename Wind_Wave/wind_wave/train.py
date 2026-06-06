@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import csv
 import json
 from collections.abc import Sequence
@@ -24,6 +25,7 @@ from .config import (
 from .dataset import (
     NormalizationStats,
     WindWaveSeq2SeqDataset,
+    _spatial_indexer,
     compute_normalization_stats,
     open_dataset,
 )
@@ -65,6 +67,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--crop-size", type=int, default=None)
     parser.add_argument("--input-region", default=DEFAULT_INPUT_REGION)
     parser.add_argument("--output-region", default=DEFAULT_OUTPUT_REGION)
+    parser.add_argument("--preload-spatial", action="store_true")
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
     return parser
@@ -114,6 +117,29 @@ def _open_pairs(pairs: list[ExtractedPair]) -> tuple[xr.Dataset, xr.Dataset]:
     wind = _open_many([pair.oper_nc for pair in pairs])
     wave = _open_many([pair.wave_nc for pair in pairs])
     return wind, wave
+
+
+def _preload_spatial_datasets(
+    wind: xr.Dataset,
+    wave: xr.Dataset,
+    args: argparse.Namespace,
+) -> tuple[xr.Dataset, xr.Dataset, argparse.Namespace]:
+    wind = _spatial_indexer(
+        wind,
+        args.spatial_stride,
+        args.crop_size,
+        parse_region(args.input_region),
+    ).load()
+    wave = _spatial_indexer(
+        wave,
+        args.spatial_stride,
+        args.crop_size,
+        parse_region(args.output_region),
+    ).load()
+    loaded_args = copy.copy(args)
+    loaded_args.spatial_stride = 1
+    loaded_args.crop_size = None
+    return wind, wave, loaded_args
 
 
 def _prepare_datasets(args: argparse.Namespace) -> tuple[xr.Dataset, xr.Dataset, list[pd.Timestamp], tuple[int, ...]]:
@@ -346,24 +372,27 @@ def train(args: argparse.Namespace) -> dict[str, float]:
 
     wind, wave, initialization_times, lead_hours = _prepare_datasets(args)
     train_times, val_times, test_times = chronological_split(initialization_times)
+    data_args = args
+    if args.preload_spatial:
+        wind, wave, data_args = _preload_spatial_datasets(wind, wave, args)
     stats = compute_normalization_stats(
         wind,
         wave,
         train_times,
-        spatial_stride=args.spatial_stride,
-        crop_size=args.crop_size,
-        input_region=parse_region(args.input_region),
-        output_region=parse_region(args.output_region),
-        history_hours=args.history_hours,
+        spatial_stride=data_args.spatial_stride,
+        crop_size=data_args.crop_size,
+        input_region=parse_region(data_args.input_region),
+        output_region=parse_region(data_args.output_region),
+        history_hours=data_args.history_hours,
         lead_hours=lead_hours,
     )
 
     with (out_dir / "normalization.json").open("w", encoding="utf-8") as file:
         json.dump(stats.to_dict(), file, indent=2)
 
-    train_loader = _make_loader(wind, wave, train_times, stats, args, lead_hours, shuffle=True)
-    val_loader = _make_loader(wind, wave, val_times, stats, args, lead_hours, shuffle=False)
-    test_loader = _make_loader(wind, wave, test_times, stats, args, lead_hours, shuffle=False)
+    train_loader = _make_loader(wind, wave, train_times, stats, data_args, lead_hours, shuffle=True)
+    val_loader = _make_loader(wind, wave, val_times, stats, data_args, lead_hours, shuffle=False)
+    test_loader = _make_loader(wind, wave, test_times, stats, data_args, lead_hours, shuffle=False)
     device = _device_from_arg(args.device)
     model = ConvLSTMWindWaveModel(
         input_channels=2,
@@ -427,7 +456,7 @@ def train(args: argparse.Namespace) -> dict[str, float]:
     ]
     _write_csv(log_dir / "baseline_metrics_by_lead.csv", baseline_rows)
 
-    preview_loader = _make_loader(wind, wave, test_times[:1], stats, args, lead_hours, shuffle=False)
+    preview_loader = _make_loader(wind, wave, test_times[:1], stats, data_args, lead_hours, shuffle=False)
     preview_batch = next(iter(preview_loader))
     model.eval()
     with torch.no_grad():
