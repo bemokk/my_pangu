@@ -320,18 +320,26 @@ def plot_best_rmse_hexes(
 
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     projection = ccrs.PlateCarree()
-    fig, axes = plt.subplots(
-        1,
-        4,
-        figsize=(15.4, 4.7),
-        subplot_kw={"projection": projection},
-        gridspec_kw={"width_ratios": [1.0, 1.0, 1.0, 0.62]},
-        constrained_layout=False,
+    fig = plt.figure(figsize=(18.5, 6.7))
+    map_bottom = 0.13
+    map_height = 0.80
+    map_gap = 0.024
+    map_width = (
+        map_height
+        * (LON_MAX - LON_MIN)
+        / (LAT_MAX - LAT_MIN)
+        * (fig.get_figheight() / fig.get_figwidth())
     )
-    axes = np.asarray(axes).reshape(-1)
-
-    map_axes = axes[: len(LEAD_HOURS)]
-    legend_ax = axes[len(LEAD_HOURS)]
+    map_left = 0.035
+    map_axes = np.asarray(
+        [
+            fig.add_axes(
+                [map_left + panel_index * (map_width + map_gap), map_bottom, map_width, map_height],
+                projection=projection,
+            )
+            for panel_index in range(len(LEAD_HOURS))
+        ]
+    )
 
     for panel_index, (ax, lead_hour) in enumerate(zip(map_axes, LEAD_HOURS)):
         lead_stats = stats[stats["lead_hour"] == lead_hour].set_index("hex_id")
@@ -423,29 +431,16 @@ def plot_best_rmse_hexes(
             Patch(facecolor="white", edgecolor="#333333", label="No matched sample"),
         ]
     )
-    legend_ax.set_axis_off()
-    legend_ax.set_anchor("W")
-    legend_ax.legend(handles=handles, loc="center left", frameon=False, borderaxespad=0.0)
-    fig.suptitle(
-        "Best Wind Speed RMSE by China Sea Hexagon: ERA5 5d Forecast vs GDAS Forecast",
-        y=1.02,
-        fontsize=14,
-        fontweight="bold",
+    map_axes[0].legend(
+        handles=handles,
+        loc="upper left",
+        bbox_to_anchor=(0.015, 0.985),
+        frameon=True,
+        framealpha=0.9,
+        facecolor="white",
+        edgecolor="#777777",
+        borderaxespad=0.0,
     )
-    fig.text(
-        0.5,
-        0.035,
-        (
-            f"Hex side length: {HEX_SIDE_DEG:g} deg. "
-            f"A colored hexagon requires at least {MIN_SAMPLES_PER_DATASET} matched samples "
-            "for both forecast datasets."
-        ),
-        ha="center",
-        va="bottom",
-        fontsize=9,
-        color="#444444",
-    )
-    fig.subplots_adjust(left=0.035, right=0.99, bottom=0.16, top=0.84, wspace=0.08)
     fig.savefig(png_path, bbox_inches="tight")
     fig.savefig(svg_path, bbox_inches="tight")
     plt.close(fig)

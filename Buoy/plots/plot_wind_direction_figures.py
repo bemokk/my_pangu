@@ -323,25 +323,18 @@ def make_direction_frequency_figure(df: pd.DataFrame) -> None:
         ax.set_title(f"({panel_letter}) Lead {lead_hour} h", y=1.1, fontweight="bold")
 
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(
+    axes[0].legend(
         handles,
         labels,
-        loc="upper center",
-        ncol=4,
-        frameon=False,
-        bbox_to_anchor=(0.5, 1.02),
+        loc="upper left",
+        bbox_to_anchor=(-0.34, 1.22),
+        frameon=True,
+        facecolor="white",
+        edgecolor="#DDDDDD",
+        framealpha=0.9,
+        borderaxespad=0.2,
     )
-    fig.suptitle("Wind Direction Frequency by Forecast Lead Time", y=1.09, fontsize=14)
-    fig.text(
-        0.5,
-        0.02,
-        "Frequencies are grouped into 16 compass sectors. Observed frequencies use buoy wind direction.",
-        ha="center",
-        va="bottom",
-        fontsize=9,
-        color="#555555",
-    )
-    fig.tight_layout(rect=[0.01, 0.08, 0.99, 0.94])
+    fig.tight_layout(rect=[0.01, 0.04, 0.99, 0.96])
     fig.savefig(OUT_FREQUENCY_PNG, bbox_inches="tight")
     fig.savefig(OUT_FREQUENCY_SVG, bbox_inches="tight")
     plt.close(fig)
