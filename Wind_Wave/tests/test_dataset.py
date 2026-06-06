@@ -58,9 +58,23 @@ def test_dataset_returns_expected_seq2seq_shapes_with_stride():
 
     assert sample["inputs"].shape == (24, 2, 5, 6)
     assert sample["targets"].shape == (5, 4, 3, 4)
+    assert sample["persistence"].shape == sample["targets"].shape
     assert sample["target_times"][0] == "2025-01-02T06:00:00"
     np.testing.assert_allclose(sample["targets"][:, 2].numpy(), 0.0, atol=1e-6)
     np.testing.assert_allclose(sample["targets"][:, 3].numpy(), 1.0, atol=1e-6)
+    for lead_index in range(1, sample["persistence"].shape[0]):
+        np.testing.assert_allclose(
+            sample["persistence"][lead_index].numpy(),
+            sample["persistence"][0].numpy(),
+        )
+    expected_swh = (
+        wave["swh"]
+        .sel(time=pd.Timestamp("2025-01-02T00:00"))
+        .sel(latitude=slice(40.0, 15.0), longitude=slice(105.0, 135.0))
+        .isel(latitude=slice(None, None, 2), longitude=slice(None, None, 2))
+        .values
+    )
+    np.testing.assert_allclose(sample["persistence"][0, 0].numpy(), expected_swh)
 
 
 def test_compute_normalization_stats_rejects_all_nan_values():

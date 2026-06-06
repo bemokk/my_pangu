@@ -275,6 +275,14 @@ class WindWaveSeq2SeqDataset(Dataset):
             self.crop_size,
             self.output_region,
         )
+        persistence = _select_wave_array(
+            self.wave_ds,
+            [t0],
+            self.spatial_stride,
+            self.crop_size,
+            self.output_region,
+        )
+        persistence = np.repeat(persistence, len(self.lead_hours), axis=0)
 
         inputs = (inputs - self.stats.input_mean[None, :, None, None]) / self.stats.input_std[
             None, :, None, None
@@ -282,10 +290,14 @@ class WindWaveSeq2SeqDataset(Dataset):
         targets = (targets - self.stats.target_mean[None, :, None, None]) / self.stats.target_std[
             None, :, None, None
         ]
+        persistence = (
+            persistence - self.stats.target_mean[None, :, None, None]
+        ) / self.stats.target_std[None, :, None, None]
 
         return {
             "inputs": torch.from_numpy(inputs.astype(np.float32)),
             "targets": torch.from_numpy(targets.astype(np.float32)),
+            "persistence": torch.from_numpy(persistence.astype(np.float32)),
             "t0": t0.isoformat(),
             "input_times": [time.isoformat() for time in input_times],
             "target_times": [time.isoformat() for time in target_times],

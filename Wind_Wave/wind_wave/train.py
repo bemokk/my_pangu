@@ -176,6 +176,45 @@ def _denormalize_targets(tensor: torch.Tensor, stats: NormalizationStats, device
     return tensor * std + mean
 
 
+def _empty_per_lead_metrics(lead_hours: tuple[int, ...]) -> dict[int, dict[str, list[float]]]:
+    return {lead: {"swh": [], "mwp": [], "mwd": []} for lead in lead_hours}
+
+
+def _append_per_lead_metrics(
+    per_lead: dict[int, dict[str, list[float]]],
+    predictions: torch.Tensor,
+    targets: torch.Tensor,
+    lead_hours: tuple[int, ...],
+) -> None:
+    for lead_index, lead in enumerate(lead_hours):
+        per_lead[lead]["swh"].append(float(rmse(predictions[:, lead_index, 0], targets[:, lead_index, 0]).cpu()))
+        per_lead[lead]["mwp"].append(float(rmse(predictions[:, lead_index, 1], targets[:, lead_index, 1]).cpu()))
+        per_lead[lead]["mwd"].append(
+            float(
+                circular_mae_degrees(
+                    predictions[:, lead_index, 3],
+                    predictions[:, lead_index, 2],
+                    targets[:, lead_index, 3],
+                    targets[:, lead_index, 2],
+                ).cpu()
+            )
+        )
+
+
+def _finalize_per_lead_metrics(
+    per_lead: dict[int, dict[str, list[float]]],
+) -> list[dict[str, float | int]]:
+    return [
+        {
+            "lead_hour": lead,
+            "rmse_swh": float(np.mean(values["swh"])),
+            "rmse_mwp": float(np.mean(values["mwp"])),
+            "mae_mwd_degrees": float(np.mean(values["mwd"])),
+        }
+        for lead, values in per_lead.items()
+    ]
+
+
 def _evaluate_loader(
     model: ConvLSTMWindWaveModel,
     loader: DataLoader,
@@ -185,10 +224,7 @@ def _evaluate_loader(
 ) -> tuple[float, list[dict[str, float | int]]]:
     model.eval()
     losses = []
-    metric_rows = []
-    per_lead: dict[int, dict[str, list[float]]] = {
-        lead: {"swh": [], "mwp": [], "mwd": []} for lead in lead_hours
-    }
+    per_lead = _empty_per_lead_metrics(lead_hours)
     with torch.no_grad():
         for batch in loader:
             inputs = batch["inputs"].to(device)
@@ -199,31 +235,27 @@ def _evaluate_loader(
 
             pred_raw = _denormalize_targets(predictions, stats, device)
             target_raw = _denormalize_targets(targets, stats, device)
-            for lead_index, lead in enumerate(lead_hours):
-                per_lead[lead]["swh"].append(float(rmse(pred_raw[:, lead_index, 0], target_raw[:, lead_index, 0]).cpu()))
-                per_lead[lead]["mwp"].append(float(rmse(pred_raw[:, lead_index, 1], target_raw[:, lead_index, 1]).cpu()))
-                per_lead[lead]["mwd"].append(
-                    float(
-                        circular_mae_degrees(
-                            pred_raw[:, lead_index, 3],
-                            pred_raw[:, lead_index, 2],
-                            target_raw[:, lead_index, 3],
-                            target_raw[:, lead_index, 2],
-                        ).cpu()
-                    )
-                )
+            _append_per_lead_metrics(per_lead, pred_raw, target_raw, lead_hours)
 
-    for lead, values in per_lead.items():
-        metric_rows.append(
-            {
-                "lead_hour": lead,
-                "rmse_swh": float(np.mean(values["swh"])),
-                "rmse_mwp": float(np.mean(values["mwp"])),
-                "mae_mwd_degrees": float(np.mean(values["mwd"])),
-            }
-        )
+    return float(np.mean(losses)), _finalize_per_lead_metrics(per_lead)
 
-    return float(np.mean(losses)), metric_rows
+
+def _evaluate_persistence_loader(
+    loader: DataLoader,
+    stats: NormalizationStats,
+    device: torch.device,
+    lead_hours: tuple[int, ...],
+) -> tuple[float, list[dict[str, float | int]]]:
+    losses = []
+    per_lead = _empty_per_lead_metrics(lead_hours)
+    for batch in loader:
+        predictions = batch["persistence"].to(device)
+        targets = batch["targets"].to(device)
+        losses.append(float(masked_mse_loss(predictions, targets).cpu()))
+        pred_raw = _denormalize_targets(predictions, stats, device)
+        target_raw = _denormalize_targets(targets, stats, device)
+        _append_per_lead_metrics(per_lead, pred_raw, target_raw, lead_hours)
+    return float(np.mean(losses)), _finalize_per_lead_metrics(per_lead)
 
 
 def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -234,6 +266,61 @@ def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
         writer = csv.DictWriter(file, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _plot_training_curve(path: Path, rows: list[dict[str, float | int]]) -> None:
+    from PIL import Image, ImageDraw
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    width, height = 1000, 600
+    left, top, right, bottom = 90, 65, 950, 515
+    image = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(image)
+    epochs = np.asarray([int(row["epoch"]) for row in rows], dtype=np.float64)
+    train_loss = np.asarray([float(row["train_loss"]) for row in rows], dtype=np.float64)
+    val_loss = np.asarray([float(row["val_loss"]) for row in rows], dtype=np.float64)
+    all_losses = np.concatenate([train_loss, val_loss])
+    loss_min = float(all_losses.min())
+    loss_max = float(all_losses.max())
+    loss_padding = max((loss_max - loss_min) * 0.1, 1e-6)
+    loss_min -= loss_padding
+    loss_max += loss_padding
+    epoch_min = float(epochs.min())
+    epoch_max = float(epochs.max())
+
+    def point(epoch: float, loss: float) -> tuple[int, int]:
+        x_fraction = 0.5 if epoch_max == epoch_min else (epoch - epoch_min) / (epoch_max - epoch_min)
+        y_fraction = (loss - loss_min) / (loss_max - loss_min)
+        return (
+            int(left + x_fraction * (right - left)),
+            int(bottom - y_fraction * (bottom - top)),
+        )
+
+    for grid_index in range(6):
+        fraction = grid_index / 5
+        y = int(bottom - fraction * (bottom - top))
+        value = loss_min + fraction * (loss_max - loss_min)
+        draw.line((left, y, right, y), fill="#DDDDDD", width=1)
+        draw.text((12, y - 7), f"{value:.4f}", fill="#333333")
+
+    draw.line((left, top, left, bottom), fill="#222222", width=2)
+    draw.line((left, bottom, right, bottom), fill="#222222", width=2)
+    train_points = [point(epoch, loss) for epoch, loss in zip(epochs, train_loss)]
+    val_points = [point(epoch, loss) for epoch, loss in zip(epochs, val_loss)]
+    if len(train_points) > 1:
+        draw.line(train_points, fill="#2166AC", width=4)
+        draw.line(val_points, fill="#B2182B", width=4)
+    for train_point, val_point in zip(train_points, val_points):
+        draw.ellipse((*np.subtract(train_point, 5), *np.add(train_point, 5)), fill="#2166AC")
+        draw.ellipse((*np.subtract(val_point, 5), *np.add(val_point, 5)), fill="#B2182B")
+
+    draw.text((left, 20), "Training and Validation Loss", fill="#111111")
+    draw.text((left, 545), f"Epoch {int(epoch_min)} to {int(epoch_max)}", fill="#333333")
+    draw.line((720, 30, 755, 30), fill="#2166AC", width=4)
+    draw.text((765, 22), "Train", fill="#333333")
+    draw.line((840, 30, 875, 30), fill="#B2182B", width=4)
+    draw.text((885, 22), "Validation", fill="#333333")
+    image.save(path, format="PNG")
 
 
 def _write_preview(path: Path, metadata_path: Path, predictions: torch.Tensor, targets: torch.Tensor, batch: dict[str, object]) -> None:
@@ -276,6 +363,7 @@ def train(args: argparse.Namespace) -> dict[str, float]:
 
     train_loader = _make_loader(wind, wave, train_times, stats, args, lead_hours, shuffle=True)
     val_loader = _make_loader(wind, wave, val_times, stats, args, lead_hours, shuffle=False)
+    test_loader = _make_loader(wind, wave, test_times, stats, args, lead_hours, shuffle=False)
     device = _device_from_arg(args.device)
     model = ConvLSTMWindWaveModel(
         input_channels=2,
@@ -325,6 +413,19 @@ def train(args: argparse.Namespace) -> dict[str, float]:
 
     _write_csv(log_dir / "train_log.csv", train_log)
     _write_csv(log_dir / "metrics_by_lead.csv", metrics_rows)
+    _plot_training_curve(log_dir / "training_curve.png", train_log)
+
+    val_persistence_loss, val_persistence_metrics = _evaluate_persistence_loader(
+        val_loader, stats, device, lead_hours
+    )
+    test_persistence_loss, test_persistence_metrics = _evaluate_persistence_loader(
+        test_loader, stats, device, lead_hours
+    )
+    baseline_rows = [
+        *({"split": "validation", **row} for row in val_persistence_metrics),
+        *({"split": "test", **row} for row in test_persistence_metrics),
+    ]
+    _write_csv(log_dir / "baseline_metrics_by_lead.csv", baseline_rows)
 
     preview_loader = _make_loader(wind, wave, test_times[:1], stats, args, lead_hours, shuffle=False)
     preview_batch = next(iter(preview_loader))
@@ -343,7 +444,12 @@ def train(args: argparse.Namespace) -> dict[str, float]:
         preview_batch,
     )
 
-    return {"train_loss": train_log[-1]["train_loss"], "val_loss": train_log[-1]["val_loss"]}
+    return {
+        "train_loss": train_log[-1]["train_loss"],
+        "val_loss": train_log[-1]["val_loss"],
+        "val_persistence_loss": val_persistence_loss,
+        "test_persistence_loss": test_persistence_loss,
+    }
 
 
 def main(argv: Sequence[str] | None = None) -> int:
