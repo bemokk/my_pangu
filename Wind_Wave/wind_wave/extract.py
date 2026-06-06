@@ -29,6 +29,28 @@ def discover_archives(raw_dir: Path) -> list[Path]:
     return archives
 
 
+def discover_extracted_pairs(
+    raw_dir: Path,
+    extracted_root: Path,
+) -> list[ExtractedPair]:
+    pairs = []
+    for extract_dir in sorted(Path(extracted_root).iterdir()):
+        if not extract_dir.is_dir():
+            continue
+        oper_nc = extract_dir / OPER_NAME
+        wave_nc = extract_dir / WAVE_NAME
+        if oper_nc.exists() and wave_nc.exists():
+            pairs.append(
+                ExtractedPair(
+                    archive=Path(raw_dir) / f"{extract_dir.name}.zip",
+                    extract_dir=extract_dir,
+                    oper_nc=oper_nc,
+                    wave_nc=wave_nc,
+                )
+            )
+    return pairs
+
+
 def extract_archives(
     raw_dir: Path,
     extracted_root: Path,
@@ -38,7 +60,14 @@ def extract_archives(
     extracted_root.mkdir(parents=True, exist_ok=True)
 
     pairs = []
-    archives = discover_archives(raw_dir)
+    try:
+        archives = discover_archives(raw_dir)
+    except FileNotFoundError:
+        pairs = discover_extracted_pairs(raw_dir, extracted_root)
+        if not pairs:
+            raise
+        return pairs[:limit] if limit is not None else pairs
+
     if limit is not None:
         archives = archives[:limit]
 
