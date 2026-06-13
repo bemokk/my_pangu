@@ -13,6 +13,22 @@ import pandas as pd
 from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 
 
+FONT_SCALE = 1.25
+FONT_FAMILY = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
+TEXT_LABELS = {
+    "observed_beaufort": "观测蒲福风力等级",
+    "valid_sample_count": "有效样本数",
+    "lead_panel": "({panel}) {lead_hour} h预报",
+}
+BASE_FONT_SIZES = {
+    "default": 10.5,
+    "title": 12,
+    "axis_label": 10.5,
+    "tick": 9.5,
+    "bar_label": 8.5,
+}
+FONT_SIZES = {name: size * FONT_SCALE for name, size in BASE_FONT_SIZES.items()}
+
 METRICS_CSV = WIND_MODEL_STATISTICS_DIR / "wind_model_statistics_3_72h" / "wind_speed_metrics_by_beaufort.csv"
 OUT_PNG = FIGURES_DIR / "wind_speed_beaufort_sample_counts_24_48_72h.png"
 OUT_SVG = FIGURES_DIR / "wind_speed_beaufort_sample_counts_24_48_72h.svg"
@@ -90,13 +106,15 @@ def load_sample_counts(csv_path: Path = METRICS_CSV) -> pd.DataFrame:
 def set_plot_style() -> None:
     plt.rcParams.update(
         {
-            "font.family": "Times New Roman",
-            "font.size": 10.5,
-            "axes.titlesize": 12,
-            "axes.labelsize": 10.5,
-            "xtick.labelsize": 9.5,
-            "ytick.labelsize": 9.5,
+            "font.family": "sans-serif",
+            "font.sans-serif": FONT_FAMILY,
+            "font.size": FONT_SIZES["default"],
+            "axes.titlesize": FONT_SIZES["title"],
+            "axes.labelsize": FONT_SIZES["axis_label"],
+            "xtick.labelsize": FONT_SIZES["tick"],
+            "ytick.labelsize": FONT_SIZES["tick"],
             "axes.linewidth": 0.8,
+            "axes.unicode_minus": False,
             "figure.dpi": 140,
             "savefig.dpi": 300,
         }
@@ -111,8 +129,8 @@ def style_axis(ax) -> None:
     ax.spines["right"].set_visible(False)
     ax.set_xticks(range(len(BEAUFORT_ORDER)))
     ax.set_xticklabels(BEAUFORT_ORDER)
-    ax.set_xlabel("Observed Beaufort wind force")
-    ax.set_ylabel("Valid sample count")
+    ax.set_xlabel(TEXT_LABELS["observed_beaufort"])
+    ax.set_ylabel(TEXT_LABELS["valid_sample_count"])
 
 
 def add_bar_labels(ax, bars) -> None:
@@ -124,7 +142,7 @@ def add_bar_labels(ax, bars) -> None:
             f"{int(height)}",
             ha="center",
             va="bottom",
-            fontsize=8.5,
+            fontsize=FONT_SIZES["bar_label"],
             color="#333333",
         )
 
@@ -152,21 +170,15 @@ def plot_sample_counts(counts: pd.DataFrame) -> None:
         )
         add_bar_labels(ax, bars)
         panel_letter = chr(ord("a") + panel_index)
-        ax.set_title(f"({panel_letter}) Lead {lead_hour} h", loc="left", fontweight="bold")
+        ax.set_title(
+            TEXT_LABELS["lead_panel"].format(panel=panel_letter, lead_hour=lead_hour),
+            loc="left",
+            fontweight="bold",
+        )
         ax.set_ylim(0, max_n * 1.16)
         style_axis(ax)
 
-    fig.suptitle("Valid Wind Speed Samples by Beaufort Class", y=1.03, fontsize=14, fontweight="bold")
-    fig.text(
-        0.5,
-        0.01,
-        "Sample counts are grouped by buoy-observed wind speed. Counts are identical across the three matched experiments.",
-        ha="center",
-        va="bottom",
-        fontsize=9,
-        color="#555555",
-    )
-    fig.tight_layout(rect=[0.02, 0.07, 0.98, 0.94])
+    fig.tight_layout(rect=[0.02, 0.03, 0.98, 0.98])
     fig.savefig(OUT_PNG, bbox_inches="tight")
     fig.savefig(OUT_SVG, bbox_inches="tight")
     plt.close(fig)

@@ -28,6 +28,28 @@ from plots.wipha_case_common import (
 )
 
 
+FONT_SCALE = 1.25
+FONT_FAMILY = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
+TEXT_LABELS = {
+    "real_track": "观测路径",
+    "gdas_forecast": "GDAS实时预报",
+    "era5_lagged_5d": "ERA5延迟5天预报",
+    "track_panel": "(a) 2025-07-17 00 UTC起报的72 h路径预报",
+    "error_panel": "(b) 路径位置误差",
+    "lead_time": "预报时效（h）",
+    "track_error": "路径误差（km）",
+}
+BASE_FONT_SIZES = {
+    "default": 10,
+    "title": 12,
+    "axis_label": 10,
+    "legend": 9,
+    "tick": 9,
+    "annotation": 7.5,
+}
+FONT_SIZES = {name: size * FONT_SCALE for name, size in BASE_FONT_SIZES.items()}
+
+
 def load_official_wipha_track(csv_path: Path = LOCAL_WIPHA_TRACK_CSV) -> pd.DataFrame:
     return load_wipha_track_csv(csv_path)
 
@@ -124,13 +146,26 @@ def plot_track_error(tracks: pd.DataFrame, errors: pd.DataFrame) -> None:
     from land_mask import load_land_union
 
     set_plot_style()
+    plt.rcParams.update(
+        {
+            "font.family": "sans-serif",
+            "font.sans-serif": FONT_FAMILY,
+            "font.size": FONT_SIZES["default"],
+            "axes.titlesize": FONT_SIZES["title"],
+            "axes.labelsize": FONT_SIZES["axis_label"],
+            "legend.fontsize": FONT_SIZES["legend"],
+            "xtick.labelsize": FONT_SIZES["tick"],
+            "ytick.labelsize": FONT_SIZES["tick"],
+            "axes.unicode_minus": False,
+        }
+    )
     projection = ccrs.PlateCarree()
     fig = plt.figure(figsize=(13.0, 5.8), constrained_layout=False)
     grid = fig.add_gridspec(1, 2, width_ratios=[1.05, 1.0])
     ax_map = fig.add_subplot(grid[0, 0], projection=projection)
     ax_err = fig.add_subplot(grid[0, 1])
 
-    ax_map.set_title("(a) 72 h track forecasts from 2025-07-17 00 UTC", loc="left", fontweight="bold")
+    ax_map.set_title(TEXT_LABELS["track_panel"], loc="left", fontweight="bold")
     ax_map.set_extent([MAP_AREA[0], MAP_AREA[1], MAP_AREA[2], MAP_AREA[3]], crs=projection)
     ax_map.set_facecolor("#EAF3F8")
     land_union = load_land_union(MAP_AREA[0], MAP_AREA[2], MAP_AREA[1], MAP_AREA[3])
@@ -149,9 +184,9 @@ def plot_track_error(tracks: pd.DataFrame, errors: pd.DataFrame) -> None:
     gl.right_labels = False
 
     style_map = {
-        "real_track": {"label": "Observed track", "color": "#222222", "marker": "o", "linestyle": "-"},
-        "gdas_forecast": {"label": "GDAS forecast", "color": DATASET_COLORS["gdas_forecast"], "marker": "^", "linestyle": "--"},
-        "era5_lagged_5d": {"label": "ERA5 lagged 5d forecast", "color": DATASET_COLORS["era5_lagged_5d"], "marker": "s", "linestyle": "--"},
+        "real_track": {"label": TEXT_LABELS["real_track"], "color": "#222222", "marker": "o", "linestyle": "-"},
+        "gdas_forecast": {"label": TEXT_LABELS["gdas_forecast"], "color": DATASET_COLORS["gdas_forecast"], "marker": "^", "linestyle": "--"},
+        "era5_lagged_5d": {"label": TEXT_LABELS["era5_lagged_5d"], "color": DATASET_COLORS["era5_lagged_5d"], "marker": "s", "linestyle": "--"},
     }
     for scheme, style in style_map.items():
         sub = tracks[tracks["scheme"] == scheme].sort_values("lead_hour")
@@ -175,7 +210,7 @@ def plot_track_error(tracks: pd.DataFrame, errors: pd.DataFrame) -> None:
                     row["lon"] + 0.12,
                     row["lat"] + 0.12,
                     f"+{int(row['lead_hour'])}h",
-                    fontsize=7.5,
+                    fontsize=FONT_SIZES["annotation"],
                     color=style["color"],
                     transform=projection,
                     zorder=6,
@@ -186,20 +221,19 @@ def plot_track_error(tracks: pd.DataFrame, errors: pd.DataFrame) -> None:
     ax_err.grid(True, color="white", linewidth=1.0)
     ax_err.spines["top"].set_visible(False)
     ax_err.spines["right"].set_visible(False)
-    ax_err.set_title("(b) Track position error", loc="left", fontweight="bold")
+    ax_err.set_title(TEXT_LABELS["error_panel"], loc="left", fontweight="bold")
     for dataset in DATASETS:
         sub = errors[errors["scheme"] == dataset].sort_values("lead_hour")
         if sub.empty:
             continue
-        ax_err.plot(sub["lead_hour"], sub["track_error_km"], color=DATASET_COLORS[dataset], marker="o", linewidth=1.8, markersize=4.0, label=DATASET_LABELS[dataset])
+        ax_err.plot(sub["lead_hour"], sub["track_error_km"], color=DATASET_COLORS[dataset], marker="o", linewidth=1.8, markersize=4.0, label=TEXT_LABELS[dataset])
     ax_err.set_xlim(0, 72)
     ax_err.set_xticks([0, 12, 24, 36, 48, 60, 72])
-    ax_err.set_xlabel("Forecast lead time (h)")
-    ax_err.set_ylabel("Track error (km)")
+    ax_err.set_xlabel(TEXT_LABELS["lead_time"])
+    ax_err.set_ylabel(TEXT_LABELS["track_error"])
     ax_err.legend(loc="upper left", frameon=True, facecolor="white", framealpha=0.9)
 
-    fig.suptitle("Typhoon Wipha Track Forecast Error Comparison", y=0.985, fontsize=14)
-    fig.tight_layout(rect=[0.03, 0.03, 0.98, 0.95])
+    fig.tight_layout(rect=[0.03, 0.03, 0.98, 0.98])
     fig.savefig(OUT_TRACK_ERROR_PNG, bbox_inches="tight")
     fig.savefig(OUT_TRACK_ERROR_SVG, bbox_inches="tight")
     plt.close(fig)

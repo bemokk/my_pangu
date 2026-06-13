@@ -13,6 +13,24 @@ import pandas as pd
 from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 
 
+FONT_SCALE = 1.25
+FONT_FAMILY = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
+TEXT_LABELS = {
+    "era5_realtime": "ERA5实时场",
+    "era5_lagged_5d": "ERA5延迟5天预报",
+    "gdas_forecast": "GDAS实时预报",
+    "observed_beaufort": "观测蒲福风力等级",
+    "lead_panel": "({panel}) {lead_hour} h预报",
+}
+BASE_FONT_SIZES = {
+    "default": 10.5,
+    "title": 12,
+    "axis_label": 10.5,
+    "legend": 9.5,
+    "tick": 9.5,
+}
+FONT_SIZES = {name: size * FONT_SCALE for name, size in BASE_FONT_SIZES.items()}
+
 METRICS_CSV = WIND_MODEL_STATISTICS_DIR / "wind_model_statistics_3_72h" / "wind_speed_metrics_by_beaufort.csv"
 
 OUT_RMSE_PNG = FIGURES_DIR / "wind_speed_beaufort_rmse_three_experiments_24_48_72h.png"
@@ -26,19 +44,19 @@ BEAUFORT_TO_CODE = {label: index for index, label in enumerate(BEAUFORT_ORDER)}
 
 DATASET_STYLES = {
     "era5_realtime": {
-        "label": "ERA5 realtime",
+        "label": TEXT_LABELS["era5_realtime"],
         "color": "#C44E52",
         "marker": "o",
         "linestyle": "-",
     },
     "era5_lagged_5d": {
-        "label": "ERA5 lagged 5d forecast",
+        "label": TEXT_LABELS["era5_lagged_5d"],
         "color": "#4C72B0",
         "marker": "s",
         "linestyle": "-",
     },
     "gdas_forecast": {
-        "label": "GDAS forecast",
+        "label": TEXT_LABELS["gdas_forecast"],
         "color": "#55A868",
         "marker": "^",
         "linestyle": "-",
@@ -95,14 +113,16 @@ def load_beaufort_metrics(csv_path: Path = METRICS_CSV) -> pd.DataFrame:
 def set_plot_style() -> None:
     plt.rcParams.update(
         {
-            "font.family": "Times New Roman",
-            "font.size": 10.5,
-            "axes.titlesize": 12,
-            "axes.labelsize": 10.5,
-            "legend.fontsize": 9.5,
-            "xtick.labelsize": 9.5,
-            "ytick.labelsize": 9.5,
+            "font.family": "sans-serif",
+            "font.sans-serif": FONT_FAMILY,
+            "font.size": FONT_SIZES["default"],
+            "axes.titlesize": FONT_SIZES["title"],
+            "axes.labelsize": FONT_SIZES["axis_label"],
+            "legend.fontsize": FONT_SIZES["legend"],
+            "xtick.labelsize": FONT_SIZES["tick"],
+            "ytick.labelsize": FONT_SIZES["tick"],
             "axes.linewidth": 0.8,
+            "axes.unicode_minus": False,
             "figure.dpi": 140,
             "savefig.dpi": 300,
         }
@@ -118,7 +138,7 @@ def style_axis(ax, ylabel: str) -> None:
     ax.set_xlim(-0.25, len(BEAUFORT_ORDER) - 0.75)
     ax.set_xticks(range(len(BEAUFORT_ORDER)))
     ax.set_xticklabels(BEAUFORT_ORDER)
-    ax.set_xlabel("Observed Beaufort wind force")
+    ax.set_xlabel(TEXT_LABELS["observed_beaufort"])
     ax.set_ylabel(ylabel)
 
 
@@ -142,7 +162,11 @@ def plot_metric_panel(ax, df: pd.DataFrame, lead_hour: int, metric: str, ylabel:
 
     panel_index = LEAD_HOURS.index(lead_hour)
     panel_letter = chr(ord("a") + panel_index)
-    ax.set_title(f"({panel_letter}) Lead {lead_hour} h", loc="left", fontweight="bold")
+    ax.set_title(
+        TEXT_LABELS["lead_panel"].format(panel=panel_letter, lead_hour=lead_hour),
+        loc="left",
+        fontweight="bold",
+    )
     style_axis(ax, ylabel)
 
 
@@ -180,17 +204,7 @@ def make_metric_figure(df: pd.DataFrame, metric: str) -> None:
         ymin, ymax = ax.get_ylim()
         ax.set_ylim(ymin, ymax + (ymax - ymin) * 0.20)
 
-    fig.suptitle(config["title"], y=0.985, fontsize=14, fontweight="bold")
-    fig.text(
-        0.5,
-        0.01,
-        "Beaufort classes are grouped by buoy-observed wind speed. Forecast lead times: 24 h, 48 h, and 72 h.",
-        ha="center",
-        va="bottom",
-        fontsize=9,
-        color="#555555",
-    )
-    fig.tight_layout(rect=[0.04, 0.045, 0.98, 0.955])
+    fig.tight_layout(rect=[0.04, 0.02, 0.98, 0.99])
 
     fig.savefig(config["png"], bbox_inches="tight")
     fig.savefig(config["svg"], bbox_inches="tight")

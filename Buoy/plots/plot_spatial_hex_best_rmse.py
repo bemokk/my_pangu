@@ -14,6 +14,28 @@ from matplotlib.path import Path as MplPath
 from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 
 
+FONT_SCALE = 1.25
+FONT_FAMILY = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
+TEXT_LABELS = {
+    "era5_lagged_5d": "ERA5延迟5天预报",
+    "era5_lagged_5d_short": "ERA5延迟5天",
+    "gdas_forecast": "GDAS实时预报",
+    "gdas_forecast_short": "GDAS",
+    "insufficient_data": "匹配样本不足阈值",
+    "no_matched_sample": "无匹配样本",
+    "no_eligible_hexagons": "没有六边形满足样本阈值",
+    "lead_panel": "({panel}) {lead_hour} h预报",
+}
+BASE_FONT_SIZES = {
+    "default": 10,
+    "title": 12,
+    "axis_label": 10,
+    "legend": 9,
+    "tick": 9,
+    "summary": 7.6,
+}
+FONT_SIZES = {name: size * FONT_SCALE for name, size in BASE_FONT_SIZES.items()}
+
 AREA = [42, 103, 13, 130]
 LAT_MAX, LON_MIN, LAT_MIN, LON_MAX = AREA
 HEX_SIDE_DEG = 1.0
@@ -29,13 +51,13 @@ MIN_SAMPLES_PER_DATASET = 5
 
 DATASET_STYLES = {
     "era5_lagged_5d": {
-        "label": "ERA5 lagged 5d forecast",
-        "short_label": "ERA5 5d",
+        "label": TEXT_LABELS["era5_lagged_5d"],
+        "short_label": TEXT_LABELS["era5_lagged_5d_short"],
         "color": "#4C72B0",
     },
     "gdas_forecast": {
-        "label": "GDAS forecast",
-        "short_label": "GDAS",
+        "label": TEXT_LABELS["gdas_forecast"],
+        "short_label": TEXT_LABELS["gdas_forecast_short"],
         "color": "#55A868",
     },
 }
@@ -263,7 +285,7 @@ def compute_hex_rmse_winners(
                 row["best_rmse_margin"] = second_best_rmse - best_rmse
             else:
                 row["best_dataset"] = "insufficient_data"
-                row["best_dataset_label"] = "Insufficient data"
+                row["best_dataset_label"] = TEXT_LABELS["insufficient_data"]
                 row["best_rmse"] = np.nan
                 row["second_best_rmse"] = np.nan
                 row["best_rmse_margin"] = np.nan
@@ -281,7 +303,7 @@ def save_stats(stats: pd.DataFrame, csv_path: Path = OUT_CSV) -> None:
 def winner_summary_text(lead_stats: pd.DataFrame) -> str:
     valid = lead_stats[lead_stats["best_dataset"].isin(DATASET_ORDER)]
     if valid.empty:
-        return "No hexagons met the sample threshold"
+        return TEXT_LABELS["no_eligible_hexagons"]
 
     total = len(valid)
     parts = []
@@ -306,13 +328,15 @@ def plot_best_rmse_hexes(
 
     plt.rcParams.update(
         {
-            "font.family": "Times New Roman",
-            "font.size": 10,
-            "axes.titlesize": 12,
-            "axes.labelsize": 10,
-            "legend.fontsize": 9,
-            "xtick.labelsize": 9,
-            "ytick.labelsize": 9,
+            "font.family": "sans-serif",
+            "font.sans-serif": FONT_FAMILY,
+            "font.size": FONT_SIZES["default"],
+            "axes.titlesize": FONT_SIZES["title"],
+            "axes.labelsize": FONT_SIZES["axis_label"],
+            "legend.fontsize": FONT_SIZES["legend"],
+            "xtick.labelsize": FONT_SIZES["tick"],
+            "ytick.labelsize": FONT_SIZES["tick"],
+            "axes.unicode_minus": False,
             "figure.dpi": 140,
             "savefig.dpi": 300,
         }
@@ -403,14 +427,18 @@ def plot_best_rmse_hexes(
             gl.left_labels = False
 
         panel_letter = chr(ord("a") + panel_index)
-        ax.set_title(f"({panel_letter}) Lead {lead_hour} h", loc="left", fontweight="bold")
+        ax.set_title(
+            TEXT_LABELS["lead_panel"].format(panel=panel_letter, lead_hour=lead_hour),
+            loc="left",
+            fontweight="bold",
+        )
         ax.text(
             0.02,
             0.02,
             winner_summary_text(lead_stats.reset_index()),
             ha="left",
             va="bottom",
-            fontsize=7.6,
+            fontsize=FONT_SIZES["summary"],
             color="#333333",
             transform=ax.transAxes,
             bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.76, "pad": 2.0},
@@ -427,8 +455,8 @@ def plot_best_rmse_hexes(
     ]
     handles.extend(
         [
-            Patch(facecolor="#D7D7D7", edgecolor="#333333", label="Matched but below sample threshold"),
-            Patch(facecolor="white", edgecolor="#333333", label="No matched sample"),
+            Patch(facecolor="#D7D7D7", edgecolor="#333333", label=TEXT_LABELS["insufficient_data"]),
+            Patch(facecolor="white", edgecolor="#333333", label=TEXT_LABELS["no_matched_sample"]),
         ]
     )
     map_axes[0].legend(

@@ -14,6 +14,24 @@ from lead_zero_metrics import append_lead_zero_rows, build_lead_zero_metric_rows
 from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 
 
+FONT_SCALE = 1.25
+FONT_FAMILY = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
+TEXT_LABELS = {
+    "era5_realtime": "ERA5实时场",
+    "era5_lagged_5d": "ERA5延迟5天预报",
+    "gdas_forecast": "GDAS实时预报",
+    "lead_time": "预报时效（h）",
+    "correlation": "相关系数",
+}
+BASE_FONT_SIZES = {
+    "default": 11,
+    "title": 13,
+    "axis_label": 11,
+    "legend": 10,
+    "tick": 10,
+}
+FONT_SIZES = {name: size * FONT_SCALE for name, size in BASE_FONT_SIZES.items()}
+
 METRICS_CSV = WIND_MODEL_STATISTICS_DIR / "wind_model_statistics_3_72h" / "wind_speed_metrics_by_lead.csv"
 OUT_PNG = FIGURES_DIR / "wind_speed_metrics_figure2_style.png"
 OUT_SVG = FIGURES_DIR / "wind_speed_metrics_figure2_style.svg"
@@ -23,19 +41,19 @@ X_TICKS = [0, 12, 24, 36, 48, 60, 72]
 
 DATASET_STYLES = {
     "era5_realtime": {
-        "label": "ERA5 realtime",
+        "label": TEXT_LABELS["era5_realtime"],
         "color": "#C44E52",
         "marker": "o",
         "linestyle": "-",
     },
     "era5_lagged_5d": {
-        "label": "ERA5 lagged 5d forecast",
+        "label": TEXT_LABELS["era5_lagged_5d"],
         "color": "#4C72B0",
         "marker": "s",
         "linestyle": "-",
     },
     "gdas_forecast": {
-        "label": "GDAS forecast",
+        "label": TEXT_LABELS["gdas_forecast"],
         "color": "#55A868",
         "marker": "^",
         "linestyle": "-",
@@ -45,7 +63,7 @@ DATASET_STYLES = {
 PLOT_METRICS = [
     ("rmse", "(a) RMSE", "RMSE (m s$^{-1}$)"),
     ("mae", "(b) MAE", "MAE (m s$^{-1}$)"),
-    ("corr", "(c) CC", "Correlation coefficient"),
+    ("corr", "(c) CC", TEXT_LABELS["correlation"]),
 ]
 
 Y_LIMITS = {
@@ -78,14 +96,16 @@ def load_metrics(csv_path: Path, include_lead_zero: bool = False) -> pd.DataFram
 def set_plot_style() -> None:
     plt.rcParams.update(
         {
-            "font.family": "Times New Roman",
-            "font.size": 11,
-            "axes.titlesize": 13,
-            "axes.labelsize": 11,
-            "legend.fontsize": 10,
-            "xtick.labelsize": 10,
-            "ytick.labelsize": 10,
+            "font.family": "sans-serif",
+            "font.sans-serif": FONT_FAMILY,
+            "font.size": FONT_SIZES["default"],
+            "axes.titlesize": FONT_SIZES["title"],
+            "axes.labelsize": FONT_SIZES["axis_label"],
+            "legend.fontsize": FONT_SIZES["legend"],
+            "xtick.labelsize": FONT_SIZES["tick"],
+            "ytick.labelsize": FONT_SIZES["tick"],
             "axes.linewidth": 0.8,
+            "axes.unicode_minus": False,
             "figure.dpi": 140,
             "savefig.dpi": 300,
         }
@@ -100,7 +120,7 @@ def style_axis(ax, ylabel: str) -> None:
     ax.spines["right"].set_visible(False)
     ax.set_xlim(-1, 73)
     ax.set_xticks(X_TICKS)
-    ax.set_xlabel("Forecast lead time (h)")
+    ax.set_xlabel(TEXT_LABELS["lead_time"])
     ax.set_ylabel(ylabel)
 
 
@@ -146,17 +166,7 @@ def make_figure(df: pd.DataFrame) -> None:
         framealpha=0.88,
         borderaxespad=0.2,
     )
-    fig.suptitle("Wind Speed Forecast Skill Against China Sea Buoy Observations", y=0.985, fontsize=14)
-    fig.text(
-        0.5,
-        0.01,
-        "Lead times are 0 h and every 3 hours from 3 h to 72 h. Metrics use buoy wind speed as truth.",
-        ha="center",
-        va="bottom",
-        fontsize=9.5,
-        color="#555555",
-    )
-    fig.tight_layout(rect=[0.04, 0.04, 0.98, 0.955])
+    fig.tight_layout(rect=[0.04, 0.02, 0.98, 0.99])
 
     fig.savefig(OUT_PNG, bbox_inches="tight")
     fig.savefig(OUT_SVG, bbox_inches="tight")

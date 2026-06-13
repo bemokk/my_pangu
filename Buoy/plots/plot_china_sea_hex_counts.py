@@ -19,6 +19,19 @@ from land_mask import filter_ocean_records, load_land_union
 from paths import CHINA_SEA_RECORDS_DIR, DEFAULT_CHINA_SEA_DETAIL_CSV, FIGURES_DIR
 
 
+FONT_SCALE = 1.25
+FONT_FAMILY = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
+TEXT_LABELS = {
+    "colorbar": "每个六边形网格的记录数",
+}
+BASE_FONT_SIZES = {
+    "default": 10,
+    "axis_label": 10,
+    "tick": 9,
+    "annotation": 8,
+}
+FONT_SIZES = {name: size * FONT_SCALE for name, size in BASE_FONT_SIZES.items()}
+
 DETAIL_CSV = DEFAULT_CHINA_SEA_DETAIL_CSV
 # AREA follows the common meteorological order: [lat_max, lon_min, lat_min, lon_max].
 AREA = [42, 103, 13, 130]
@@ -36,7 +49,7 @@ HEX_COUNTS_PNG = FIGURES_DIR / f"china_sea_hex_counts_area_42_103_13_130_{HEX_SI
 # If True, cells with zero records are labeled as 0. This is usually too dense for 1-degree grids.
 LABEL_ZERO_CELLS = False
 LABEL_EDGE_MARGIN_DEG = 0.18 * HEX_SIDE_DEG
-HEX_LABEL_FONT_SIZE = 8 if HEX_SIDE_DEG <= 1.0 else 9
+HEX_LABEL_FONT_SIZE = FONT_SIZES["annotation"] if HEX_SIDE_DEG <= 1.0 else 9 * FONT_SCALE
 HEX_LABEL_FONT_COLOR = "black"
 
 
@@ -132,6 +145,17 @@ def save_hex_counts(hexes: pd.DataFrame) -> None:
 
 
 def plot_hex_counts(hexes: pd.DataFrame, land_union, ocean_area, records: pd.DataFrame) -> None:
+    plt.rcParams.update(
+        {
+            "font.family": "sans-serif",
+            "font.sans-serif": FONT_FAMILY,
+            "font.size": FONT_SIZES["default"],
+            "axes.labelsize": FONT_SIZES["axis_label"],
+            "xtick.labelsize": FONT_SIZES["tick"],
+            "ytick.labelsize": FONT_SIZES["tick"],
+            "axes.unicode_minus": False,
+        }
+    )
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     projection = ccrs.PlateCarree()
     fig = plt.figure(figsize=(13.5, 13.0))
@@ -212,23 +236,15 @@ def plot_hex_counts(hexes: pd.DataFrame, land_union, ocean_area, records: pd.Dat
     )
     gl.top_labels = False
     gl.right_labels = False
-
-    title = (
-        f"Valid ICOADS Wind Record Counts by Hexagon "
-        f"(side={HEX_SIDE_DEG:g} deg)"
-    )
-    subtitle = (
-        f"AREA=[42,103,13,130], {START_DATE:%Y-%m-%d} to {END_DATE:%Y-%m-%d}, "
-        f"valid wind direction/speed records: {len(records):,}"
-    )
-    ax.set_title(title, fontsize=15, pad=14)
-    fig.text(0.125, 0.91, subtitle, fontsize=9.5, color="#444444")
+    gl.xlabel_style = {"size": FONT_SIZES["tick"]}
+    gl.ylabel_style = {"size": FONT_SIZES["tick"]}
 
     if not nonzero.empty:
         sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
         sm.set_array([])
         cbar = fig.colorbar(sm, ax=ax, orientation="vertical", shrink=0.62, pad=0.02)
-        cbar.set_label("Record count per hexagon")
+        cbar.set_label(TEXT_LABELS["colorbar"], fontsize=FONT_SIZES["axis_label"])
+        cbar.ax.tick_params(labelsize=FONT_SIZES["tick"])
 
     fig.savefig(HEX_COUNTS_PNG, dpi=260, bbox_inches="tight")
     plt.close(fig)
