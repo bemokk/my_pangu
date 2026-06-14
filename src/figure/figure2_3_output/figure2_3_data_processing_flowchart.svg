@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2600" height="1500" viewBox="0 0 2600 1500">
+<defs>
+<marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+<path d="M0,0 L12,6 L0,12 z" fill="#9AA0A6"/>
+</marker>
+</defs>
+<rect width="2600" height="1500" fill="#FFFFFF"/>
+<text x="120" y="120" text-anchor="start" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="38" font-weight="700" fill="#202124">数据预处理与验证评估流程</text>
+<text x="120" y="165" text-anchor="start" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="23" font-weight="400" fill="#5F6368">ERA5 滞后起报与 GDAS 实时起报在统一 Pangu 输入、推理和近海风场验证框架下进行比较</text>
+<rect x="115" y="205" width="1130" height="30" rx="12" fill="#F8FBFF" stroke="#4F81BD" stroke-width="2"/>
+<rect x="1355" y="205" width="1130" height="30" rx="12" fill="#F8FCF9" stroke="#5B9A6B" stroke-width="2"/>
+<text x="680" y="227" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="23" font-weight="700" fill="#4F81BD">ERA5_Lagged 分支</text>
+<text x="1920" y="227" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="23" font-weight="700" fill="#5B9A6B">GDAS_Realtime 分支</text>
+<rect x="150" y="285" width="360" height="128" rx="28" ry="28" fill="#EAF2FB" stroke="#4F81BD" stroke-width="3"/>
+<text x="330.0" y="327.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="25" font-weight="700" fill="#202124">ERA5 再分析资料</text>
+<text x="330.0" y="366.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">目标时刻前 120 h</text>
+<text x="330.0" y="393.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">多时次 NetCDF</text>
+<rect x="150" y="480" width="360" height="142" rx="28" ry="28" fill="#EAF2FB" stroke="#4F81BD" stroke-width="3"/>
+<text x="330.0" y="516.0" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="25" font-weight="700" fill="#202124">变量提取与坐标统一</text>
+<text x="330.0" y="555.0" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">MSLP、U10、V10、T2M</text>
+<text x="330.0" y="582.0" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">Z/Q/T/U/V 13 层</text>
+<text x="330.0" y="609.0" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">0–359.75°经度，纬度降序</text>
+<rect x="150" y="690" width="360" height="128" rx="28" ry="28" fill="#EAF2FB" stroke="#4F81BD" stroke-width="3"/>
+<text x="330.0" y="719.0" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="25" font-weight="700" fill="#202124">Pangu 输入张量</text>
+<text x="330.0" y="758.0" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">input_surface.npy</text>
+<text x="330.0" y="785.0" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">input_upper.npy</text>
+<text x="330.0" y="812.0" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">(4,721,1440)/(5,13,721,1440)</text>
+<rect x="150" y="890" width="360" height="128" rx="28" ry="28" fill="#EAF2FB" stroke="#4F81BD" stroke-width="3"/>
+<text x="330.0" y="932.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="25" font-weight="700" fill="#202124">滞后滚动推演</text>
+<text x="330.0" y="971.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">先积分 120 h 到目标时刻</text>
+<text x="330.0" y="998.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">再生成 1–72 h 预报</text>
+<rect x="1990" y="285" width="360" height="128" rx="28" ry="28" fill="#EAF6EF" stroke="#5B9A6B" stroke-width="3"/>
+<text x="2170.0" y="327.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="25" font-weight="700" fill="#202124">GDAS 分析场</text>
+<text x="2170.0" y="366.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">目标时刻 GRIB2/FNL</text>
+<text x="2170.0" y="393.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">00 UTC 实时起报</text>
+<rect x="1990" y="480" width="360" height="142" rx="28" ry="28" fill="#EAF6EF" stroke="#5B9A6B" stroke-width="3"/>
+<text x="2170.0" y="516.0" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="25" font-weight="700" fill="#202124">变量映射与单位转换</text>
+<text x="2170.0" y="555.0" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">prmsl/10u/10v/2t</text>
+<text x="2170.0" y="582.0" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">gh→位势 Z</text>
+<text x="2170.0" y="609.0" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">经纬度排序与层次对齐</text>
+<rect x="1990" y="690" width="360" height="128" rx="28" ry="28" fill="#EAF6EF" stroke="#5B9A6B" stroke-width="3"/>
+<text x="2170.0" y="719.0" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="25" font-weight="700" fill="#202124">Pangu 输入张量</text>
+<text x="2170.0" y="758.0" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">input_surface.npy</text>
+<text x="2170.0" y="785.0" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">input_upper.npy</text>
+<text x="2170.0" y="812.0" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">同一变量顺序与网格</text>
+<rect x="1990" y="890" width="360" height="128" rx="28" ry="28" fill="#EAF6EF" stroke="#5B9A6B" stroke-width="3"/>
+<text x="2170.0" y="932.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="25" font-weight="700" fill="#202124">实时直接起报</text>
+<text x="2170.0" y="971.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">从目标时刻直接生成</text>
+<text x="2170.0" y="998.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">1–72 h 预报</text>
+<rect x="890" y="450" width="480" height="126" rx="28" ry="28" fill="#F5F5F5" stroke="#6C757D" stroke-width="3"/>
+<text x="1130.0" y="491.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="25" font-weight="700" fill="#202124">Pangu ONNX 推理</text>
+<text x="1130.0" y="530.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">1/3/6/24 h 模型分步调用</text>
+<text x="1130.0" y="557.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">时间链缓存避免重复计算</text>
+<rect x="890" y="655" width="480" height="118" rx="28" ry="28" fill="#F5F5F5" stroke="#6C757D" stroke-width="3"/>
+<text x="1130.0" y="692.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="25" font-weight="700" fill="#202124">输出解码</text>
+<text x="1130.0" y="731.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">npy → NetCDF</text>
+<text x="1130.0" y="758.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">surface/upper 输出变量</text>
+<rect x="890" y="850" width="480" height="126" rx="28" ry="28" fill="#F5F5F5" stroke="#6C757D" stroke-width="3"/>
+<text x="1130.0" y="891.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="25" font-weight="700" fill="#202124">区域裁剪与海洋掩膜</text>
+<text x="1130.0" y="930.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">中国海及邻近海域</text>
+<text x="1130.0" y="957.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">剔除陆地与缺测格点</text>
+<rect x="890" y="1045" width="480" height="126" rx="28" ry="28" fill="#FFF6E5" stroke="#D39B2A" stroke-width="3"/>
+<text x="1130.0" y="1086.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="25" font-weight="700" fill="#202124">观测与参考场验证</text>
+<text x="1130.0" y="1125.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">ERA5 对应时刻场</text>
+<text x="1130.0" y="1152.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">浮标/ICOADS/最佳路径</text>
+<rect x="890" y="1240" width="480" height="126" rx="28" ry="28" fill="#FFF6E5" stroke="#D39B2A" stroke-width="3"/>
+<text x="1130.0" y="1281.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="25" font-weight="700" fill="#202124">统计指标与论文图表</text>
+<text x="1130.0" y="1320.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">Bias、MAE、RMSE</text>
+<text x="1130.0" y="1347.5" text-anchor="middle" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="21" font-weight="400" fill="#5F6368">风向角差、分级误差、台风个例</text>
+<line x1="330.0" y1="413" x2="330.0" y2="480" stroke="#9AA0A6" stroke-width="4" marker-end="url(#arrow)"/>
+<line x1="330.0" y1="622" x2="330.0" y2="690" stroke="#9AA0A6" stroke-width="4" marker-end="url(#arrow)"/>
+<line x1="330.0" y1="818" x2="330.0" y2="890" stroke="#9AA0A6" stroke-width="4" marker-end="url(#arrow)"/>
+<line x1="2170.0" y1="413" x2="2170.0" y2="480" stroke="#9AA0A6" stroke-width="4" marker-end="url(#arrow)"/>
+<line x1="2170.0" y1="622" x2="2170.0" y2="690" stroke="#9AA0A6" stroke-width="4" marker-end="url(#arrow)"/>
+<line x1="2170.0" y1="818" x2="2170.0" y2="890" stroke="#9AA0A6" stroke-width="4" marker-end="url(#arrow)"/>
+<line x1="1130.0" y1="576" x2="1130.0" y2="655" stroke="#9AA0A6" stroke-width="4" marker-end="url(#arrow)"/>
+<line x1="1130.0" y1="773" x2="1130.0" y2="850" stroke="#9AA0A6" stroke-width="4" marker-end="url(#arrow)"/>
+<line x1="1130.0" y1="976" x2="1130.0" y2="1045" stroke="#9AA0A6" stroke-width="4" marker-end="url(#arrow)"/>
+<line x1="1130.0" y1="1171" x2="1130.0" y2="1240" stroke="#9AA0A6" stroke-width="4" marker-end="url(#arrow)"/>
+<line x1="510" y1="954" x2="890" y2="513" stroke="#4F81BD" stroke-width="5" marker-end="url(#arrow)"/>
+<line x1="1990" y1="954" x2="1370" y2="513" stroke="#5B9A6B" stroke-width="5" marker-end="url(#arrow)"/>
+</svg>
