@@ -11,6 +11,17 @@ def test_train_parser_defaults_match_seq2seq_design():
     assert args.input_region == "5,45,95,150"
     assert args.output_region == "15,40,105,135"
     assert args.preload_spatial is False
+    assert args.model_variant == "m1"
+    assert args.run_name is None
+
+
+def test_train_parser_accepts_v2_variants_and_run_name():
+    args = build_train_parser().parse_args(
+        ["--model-variant", "m2-wave0-residual", "--run-name", "m2_wave0_residual"]
+    )
+
+    assert args.model_variant == "m2-wave0-residual"
+    assert args.run_name == "m2_wave0_residual"
 
 
 def test_eval_parser_accepts_checkpoint_argument():

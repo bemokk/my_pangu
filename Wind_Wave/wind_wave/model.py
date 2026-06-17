@@ -111,3 +111,116 @@ class ConvLSTMWindWaveModel(nn.Module):
             encoded = F.interpolate(encoded, size=output_size, mode="bilinear", align_corners=False)
         outputs = [head(encoded) for head in self.heads]
         return torch.stack(outputs, dim=1)
+
+
+def _conv_block(input_channels: int, output_channels: int) -> nn.Sequential:
+    return nn.Sequential(
+        nn.Conv2d(input_channels, output_channels, kernel_size=3, padding=1),
+        nn.ReLU(inplace=True),
+        nn.Conv2d(output_channels, output_channels, kernel_size=3, padding=1),
+        nn.ReLU(inplace=True),
+    )
+
+
+class WindWaveV2Model(nn.Module):
+    def __init__(
+        self,
+        hidden_channels: int = 32,
+        lead_count: int = 5,
+        target_channels: int = 4,
+        use_wave0: bool = True,
+        residual: bool = False,
+        layers: int = 1,
+    ) -> None:
+        super().__init__()
+        self.lead_count = lead_count
+        self.target_channels = target_channels
+        self.use_wave0 = use_wave0
+        self.residual = residual
+        self.past_encoder = ConvLSTMEncoder(
+            input_channels=2,
+            hidden_channels=hidden_channels,
+            layers=layers,
+        )
+        self.future_encoder = _conv_block(2, hidden_channels)
+        self.wave0_encoder = _conv_block(target_channels, hidden_channels) if use_wave0 else None
+        fused_channels = hidden_channels * (3 if use_wave0 else 2)
+        self.heads = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Conv2d(fused_channels, hidden_channels, kernel_size=3, padding=1),
+                    nn.ReLU(inplace=True),
+                    nn.Conv2d(hidden_channels, target_channels, kernel_size=1),
+                )
+                for _ in range(lead_count)
+            ]
+        )
+
+    def forward(
+        self,
+        past_wind: torch.Tensor,
+        future_wind: torch.Tensor,
+        wave0: torch.Tensor | None = None,
+        output_size: tuple[int, int] | None = None,
+    ) -> torch.Tensor:
+        if future_wind.ndim != 5:
+            raise ValueError("Expected future_wind tensor shape [B, lead, C, H, W]")
+        if future_wind.shape[1] != self.lead_count:
+            raise ValueError("future_wind lead dimension does not match model lead_count")
+        if self.use_wave0 and wave0 is None:
+            raise ValueError("wave0 is required when use_wave0=True")
+
+        past_wind = torch.nan_to_num(past_wind, nan=0.0, posinf=0.0, neginf=0.0)
+        future_wind = torch.nan_to_num(future_wind, nan=0.0, posinf=0.0, neginf=0.0)
+        wave0_clean = None
+        if wave0 is not None:
+            wave0_clean = torch.nan_to_num(wave0, nan=0.0, posinf=0.0, neginf=0.0)
+
+        past_feature = self.past_encoder(past_wind)
+        if output_size is not None and past_feature.shape[-2:] != tuple(output_size):
+            past_feature = F.interpolate(
+                past_feature,
+                size=output_size,
+                mode="bilinear",
+                align_corners=False,
+            )
+
+        wave0_feature = None
+        if self.use_wave0 and self.wave0_encoder is not None and wave0_clean is not None:
+            wave0_feature = self.wave0_encoder(wave0_clean)
+            if output_size is not None and wave0_feature.shape[-2:] != tuple(output_size):
+                wave0_feature = F.interpolate(
+                    wave0_feature,
+                    size=output_size,
+                    mode="bilinear",
+                    align_corners=False,
+                )
+
+        outputs = []
+        for lead_index, head in enumerate(self.heads):
+            future_feature = self.future_encoder(future_wind[:, lead_index])
+            if output_size is not None and future_feature.shape[-2:] != tuple(output_size):
+                future_feature = F.interpolate(
+                    future_feature,
+                    size=output_size,
+                    mode="bilinear",
+                    align_corners=False,
+                )
+            features = [past_feature, future_feature]
+            if wave0_feature is not None:
+                features.append(wave0_feature)
+            prediction = head(torch.cat(features, dim=1))
+            if self.residual:
+                if wave0_clean is None:
+                    raise ValueError("wave0 is required for residual prediction")
+                residual_base = wave0_clean
+                if output_size is not None and residual_base.shape[-2:] != tuple(output_size):
+                    residual_base = F.interpolate(
+                        residual_base,
+                        size=output_size,
+                        mode="bilinear",
+                        align_corners=False,
+                    )
+                prediction = prediction + residual_base
+            outputs.append(prediction)
+        return torch.stack(outputs, dim=1)

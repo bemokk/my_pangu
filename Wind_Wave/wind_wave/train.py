@@ -40,6 +40,10 @@ from .indexing import build_valid_initialization_times, chronological_split
 from .losses import masked_mse_loss
 from .metrics import circular_mae_degrees, rmse
 from .model import ConvLSTMWindWaveModel
+from .model import WindWaveV2Model
+
+
+MODEL_VARIANTS = ("m1", "m2-direct", "m2-wave0-direct", "m2-wave0-residual")
 
 
 def parse_lead_hours(value: str) -> tuple[int, ...]:
@@ -67,6 +71,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--crop-size", type=int, default=None)
     parser.add_argument("--input-region", default=DEFAULT_INPUT_REGION)
     parser.add_argument("--output-region", default=DEFAULT_OUTPUT_REGION)
+    parser.add_argument("--model-variant", default="m1", choices=MODEL_VARIANTS)
+    parser.add_argument("--run-name", default=None)
     parser.add_argument("--preload-spatial", action="store_true")
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
@@ -77,6 +83,10 @@ def _device_from_arg(value: str) -> torch.device:
     if value == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(value)
+
+
+def _output_dir_from_args(args: argparse.Namespace) -> Path:
+    return outputs_dir() / args.run_name if args.run_name else outputs_dir()
 
 
 def _preprocess_multifile_dataset(ds: xr.Dataset) -> xr.Dataset:
@@ -206,6 +216,22 @@ def _empty_per_lead_metrics(lead_hours: tuple[int, ...]) -> dict[int, dict[str, 
     return {lead: {"swh": [], "mwp": [], "mwd": []} for lead in lead_hours}
 
 
+def _metric_or_nan(metric_fn, *args: torch.Tensor) -> float:
+    try:
+        return float(metric_fn(*args).cpu())
+    except ValueError as exc:
+        if "finite" not in str(exc):
+            raise
+        return float("nan")
+
+
+def _nanmean_or_nan(values: list[float]) -> float:
+    array = np.asarray(values, dtype=np.float64)
+    if array.size == 0 or not np.isfinite(array).any():
+        return float("nan")
+    return float(np.nanmean(array))
+
+
 def _append_per_lead_metrics(
     per_lead: dict[int, dict[str, list[float]]],
     predictions: torch.Tensor,
@@ -213,16 +239,19 @@ def _append_per_lead_metrics(
     lead_hours: tuple[int, ...],
 ) -> None:
     for lead_index, lead in enumerate(lead_hours):
-        per_lead[lead]["swh"].append(float(rmse(predictions[:, lead_index, 0], targets[:, lead_index, 0]).cpu()))
-        per_lead[lead]["mwp"].append(float(rmse(predictions[:, lead_index, 1], targets[:, lead_index, 1]).cpu()))
+        per_lead[lead]["swh"].append(
+            _metric_or_nan(rmse, predictions[:, lead_index, 0], targets[:, lead_index, 0])
+        )
+        per_lead[lead]["mwp"].append(
+            _metric_or_nan(rmse, predictions[:, lead_index, 1], targets[:, lead_index, 1])
+        )
         per_lead[lead]["mwd"].append(
-            float(
-                circular_mae_degrees(
-                    predictions[:, lead_index, 3],
-                    predictions[:, lead_index, 2],
-                    targets[:, lead_index, 3],
-                    targets[:, lead_index, 2],
-                ).cpu()
+            _metric_or_nan(
+                circular_mae_degrees,
+                predictions[:, lead_index, 3],
+                predictions[:, lead_index, 2],
+                targets[:, lead_index, 3],
+                targets[:, lead_index, 2],
             )
         )
 
@@ -233,20 +262,21 @@ def _finalize_per_lead_metrics(
     return [
         {
             "lead_hour": lead,
-            "rmse_swh": float(np.mean(values["swh"])),
-            "rmse_mwp": float(np.mean(values["mwp"])),
-            "mae_mwd_degrees": float(np.mean(values["mwd"])),
+            "rmse_swh": _nanmean_or_nan(values["swh"]),
+            "rmse_mwp": _nanmean_or_nan(values["mwp"]),
+            "mae_mwd_degrees": _nanmean_or_nan(values["mwd"]),
         }
         for lead, values in per_lead.items()
     ]
 
 
 def _evaluate_loader(
-    model: ConvLSTMWindWaveModel,
+    model: torch.nn.Module,
     loader: DataLoader,
     stats: NormalizationStats,
     device: torch.device,
     lead_hours: tuple[int, ...],
+    model_variant: str = "m1",
 ) -> tuple[float, list[dict[str, float | int]]]:
     model.eval()
     losses = []
@@ -255,7 +285,7 @@ def _evaluate_loader(
         for batch in loader:
             inputs = batch["inputs"].to(device)
             targets = batch["targets"].to(device)
-            predictions = model(inputs, output_size=tuple(targets.shape[-2:]))
+            predictions = _predict_batch(model, batch, device, model_variant)
             loss = masked_mse_loss(predictions, targets)
             losses.append(float(loss.detach().cpu()))
 
@@ -264,6 +294,43 @@ def _evaluate_loader(
             _append_per_lead_metrics(per_lead, pred_raw, target_raw, lead_hours)
 
     return float(np.mean(losses)), _finalize_per_lead_metrics(per_lead)
+
+
+def _build_model(args: argparse.Namespace, lead_count: int) -> torch.nn.Module:
+    if args.model_variant == "m1":
+        return ConvLSTMWindWaveModel(
+            input_channels=2,
+            hidden_channels=args.hidden_channels,
+            lead_count=lead_count,
+            target_channels=4,
+        )
+    return WindWaveV2Model(
+        hidden_channels=args.hidden_channels,
+        lead_count=lead_count,
+        target_channels=4,
+        use_wave0=args.model_variant in {"m2-wave0-direct", "m2-wave0-residual"},
+        residual=args.model_variant == "m2-wave0-residual",
+    )
+
+
+def _predict_batch(
+    model: torch.nn.Module,
+    batch: dict[str, object],
+    device: torch.device,
+    model_variant: str,
+) -> torch.Tensor:
+    targets = batch["targets"].to(device)
+    inputs = batch["inputs"].to(device)
+    if model_variant == "m1":
+        return model(inputs, output_size=tuple(targets.shape[-2:]))
+    future_wind = batch["future_wind"].to(device)
+    wave0 = batch["wave0"].to(device) if "wave0" in batch else None
+    return model(
+        inputs,
+        future_wind=future_wind,
+        wave0=wave0,
+        output_size=tuple(targets.shape[-2:]),
+    )
 
 
 def _evaluate_persistence_loader(
@@ -362,7 +429,7 @@ def _write_preview(path: Path, metadata_path: Path, predictions: torch.Tensor, t
 
 def train(args: argparse.Namespace) -> dict[str, float]:
     lead_hours = parse_lead_hours(args.lead_hours)
-    out_dir = outputs_dir()
+    out_dir = _output_dir_from_args(args)
     checkpoint_dir = out_dir / "checkpoints"
     log_dir = out_dir / "logs"
     sample_dir = out_dir / "samples"
@@ -394,12 +461,7 @@ def train(args: argparse.Namespace) -> dict[str, float]:
     val_loader = _make_loader(wind, wave, val_times, stats, data_args, lead_hours, shuffle=False)
     test_loader = _make_loader(wind, wave, test_times, stats, data_args, lead_hours, shuffle=False)
     device = _device_from_arg(args.device)
-    model = ConvLSTMWindWaveModel(
-        input_channels=2,
-        hidden_channels=args.hidden_channels,
-        lead_count=len(lead_hours),
-        target_channels=4,
-    ).to(device)
+    model = _build_model(args, len(lead_hours)).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
 
     train_log = []
@@ -413,13 +475,20 @@ def train(args: argparse.Namespace) -> dict[str, float]:
             inputs = batch["inputs"].to(device)
             targets = batch["targets"].to(device)
             optimizer.zero_grad(set_to_none=True)
-            predictions = model(inputs, output_size=tuple(targets.shape[-2:]))
+            predictions = _predict_batch(model, batch, device, args.model_variant)
             loss = masked_mse_loss(predictions, targets)
             loss.backward()
             optimizer.step()
             epoch_losses.append(float(loss.detach().cpu()))
 
-        val_loss, val_metrics = _evaluate_loader(model, val_loader, stats, device, lead_hours)
+        val_loss, val_metrics = _evaluate_loader(
+            model,
+            val_loader,
+            stats,
+            device,
+            lead_hours,
+            args.model_variant,
+        )
         train_loss = float(np.mean(epoch_losses))
         train_log.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss})
         for row in val_metrics:
@@ -434,6 +503,7 @@ def train(args: argparse.Namespace) -> dict[str, float]:
             "target_channels": 4,
             "input_region": args.input_region,
             "output_region": args.output_region,
+            "model_variant": args.model_variant,
         }
         torch.save(checkpoint, checkpoint_dir / "seq2seq_convlstm_latest.pt")
         if val_loss < best_val:
@@ -461,10 +531,7 @@ def train(args: argparse.Namespace) -> dict[str, float]:
     model.eval()
     with torch.no_grad():
         preview_targets = preview_batch["targets"]
-        preview_pred = model(
-            preview_batch["inputs"].to(device),
-            output_size=tuple(preview_targets.shape[-2:]),
-        )
+        preview_pred = _predict_batch(model, preview_batch, device, args.model_variant)
     _write_preview(
         sample_dir / "predictions_preview.npz",
         sample_dir / "sample_metadata.csv",

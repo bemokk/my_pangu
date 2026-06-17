@@ -62,6 +62,8 @@ def test_dataset_returns_expected_seq2seq_shapes_with_stride():
     sample = ds[0]
 
     assert sample["inputs"].shape == (24, 2, 5, 6)
+    assert sample["future_wind"].shape == (5, 2, 5, 6)
+    assert sample["wave0"].shape == (4, 3, 4)
     assert sample["targets"].shape == (5, 4, 3, 4)
     assert sample["persistence"].shape == sample["targets"].shape
     assert sample["target_times"][0] == "2025-01-02T06:00:00"
@@ -80,6 +82,15 @@ def test_dataset_returns_expected_seq2seq_shapes_with_stride():
         .values
     )
     np.testing.assert_allclose(sample["persistence"][0, 0].numpy(), expected_swh)
+    np.testing.assert_allclose(sample["wave0"][0].numpy(), expected_swh)
+    expected_future_u10 = (
+        wind["u10"]
+        .sel(time=pd.Timestamp("2025-01-02T06:00"))
+        .sel(latitude=slice(45.0, 5.0), longitude=slice(95.0, 150.0))
+        .isel(latitude=slice(None, None, 2), longitude=slice(None, None, 2))
+        .values
+    )
+    np.testing.assert_allclose(sample["future_wind"][0, 0].numpy(), expected_future_u10)
 
 
 def test_compute_normalization_stats_rejects_all_nan_values():

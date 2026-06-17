@@ -316,6 +316,13 @@ class WindWaveSeq2SeqDataset(Dataset):
             self.crop_size,
             self.input_region,
         )
+        future_wind = _select_wind_array(
+            self.wind_ds,
+            target_times,
+            self.spatial_stride,
+            self.crop_size,
+            self.input_region,
+        )
         targets = _select_wave_array(
             self.wave_ds,
             target_times,
@@ -335,6 +342,9 @@ class WindWaveSeq2SeqDataset(Dataset):
         inputs = (inputs - self.stats.input_mean[None, :, None, None]) / self.stats.input_std[
             None, :, None, None
         ]
+        future_wind = (
+            future_wind - self.stats.input_mean[None, :, None, None]
+        ) / self.stats.input_std[None, :, None, None]
         targets = (targets - self.stats.target_mean[None, :, None, None]) / self.stats.target_std[
             None, :, None, None
         ]
@@ -344,7 +354,9 @@ class WindWaveSeq2SeqDataset(Dataset):
 
         return {
             "inputs": torch.from_numpy(inputs.astype(np.float32)),
+            "future_wind": torch.from_numpy(future_wind.astype(np.float32)),
             "targets": torch.from_numpy(targets.astype(np.float32)),
+            "wave0": torch.from_numpy(persistence[0].astype(np.float32)),
             "persistence": torch.from_numpy(persistence.astype(np.float32)),
             "t0": t0.isoformat(),
             "input_times": [time.isoformat() for time in input_times],

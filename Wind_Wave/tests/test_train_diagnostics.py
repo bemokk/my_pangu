@@ -36,6 +36,29 @@ def test_evaluate_persistence_loader_reports_metrics_by_lead():
     assert np.isclose(rows[1]["mae_mwd_degrees"], 180.0)
 
 
+def test_evaluate_persistence_loader_keeps_rows_when_direction_is_all_nan():
+    stats = NormalizationStats.identity(
+        input_names=("u10", "v10"),
+        target_names=("swh", "mwp", "cos_mwd", "sin_mwd"),
+    )
+    persistence = torch.tensor([[[[[1.0]], [[4.0]], [[float("nan")]], [[float("nan")]]]]])
+    targets = torch.tensor([[[[[2.0]], [[6.0]], [[float("nan")]], [[float("nan")]]]]])
+    loader = [{"persistence": persistence, "targets": targets}]
+
+    loss, rows = _evaluate_persistence_loader(
+        loader,
+        stats,
+        torch.device("cpu"),
+        lead_hours=(6,),
+    )
+
+    assert np.isfinite(loss)
+    assert rows[0]["lead_hour"] == 6
+    assert np.isclose(rows[0]["rmse_swh"], 1.0)
+    assert np.isclose(rows[0]["rmse_mwp"], 2.0)
+    assert np.isnan(rows[0]["mae_mwd_degrees"])
+
+
 def test_plot_training_curve_writes_nonempty_png(tmp_path):
     path = tmp_path / "training_curve.png"
 
