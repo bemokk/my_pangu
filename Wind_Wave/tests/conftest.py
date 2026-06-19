@@ -30,7 +30,9 @@ else:
 
 try:
     import xarray.backends.locks as xarray_locks
+    import xarray.backends.api as xarray_api
 except Exception:
     pass
 else:
     xarray_locks._get_scheduler = lambda *args, **kwargs: "threaded"
+    xarray_api._get_scheduler = lambda *args, **kwargs: "threaded"
