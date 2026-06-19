@@ -116,3 +116,8 @@ def test_load_direction_frequency_keeps_target_leads_and_sector_order(tmp_path):
     assert result["lead_hour"].tolist() == [24, 24, 72]
     assert result["direction_sector"].tolist() == ["N", "NNE", "NNW"]
     assert result["sector_code"].tolist() == [0, 1, 15]
+
+
+def test_frequency_radar_legend_is_left_shifted_and_radial_labels_hidden():
+    assert direction_figures.FREQUENCY_LEGEND_BBOX[0] <= -0.5
+    assert direction_figures.SHOW_FREQUENCY_RADIAL_TICK_LABELS is False

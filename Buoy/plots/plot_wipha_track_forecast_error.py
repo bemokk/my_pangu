@@ -28,7 +28,15 @@ from plots.wipha_case_common import (
 )
 
 
-FONT_SCALE = 1.25
+FONT_SCALE = 1
+BASE_FONT_SIZES = {
+    "default": 12,
+    "title": 16,
+    "axis_label": 14,
+    "legend": 13,
+    "tick": 14,
+    "annotation": 9,
+}
 FONT_FAMILY = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
 TEXT_LABELS = {
     "real_track": "观测路径",
@@ -39,14 +47,7 @@ TEXT_LABELS = {
     "lead_time": "预报时效（h）",
     "track_error": "路径误差（km）",
 }
-BASE_FONT_SIZES = {
-    "default": 10,
-    "title": 12,
-    "axis_label": 10,
-    "legend": 9,
-    "tick": 9,
-    "annotation": 7.5,
-}
+
 FONT_SIZES = {name: size * FONT_SCALE for name, size in BASE_FONT_SIZES.items()}
 
 

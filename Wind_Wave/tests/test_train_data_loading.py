@@ -4,7 +4,7 @@ import xarray as xr
 from types import SimpleNamespace
 
 from wind_wave.extract import ExtractedPair
-from wind_wave.train import _open_pairs, _preload_spatial_datasets
+from wind_wave.train import _discover_converted_pairs, _open_pairs, _preload_spatial_datasets
 
 
 def test_open_single_pair_preserves_native_wind_and_wave_grids(tmp_path, monkeypatch):
@@ -185,3 +185,34 @@ def test_preload_spatial_datasets_selects_once_and_resets_stride():
     assert loaded_wave.sizes["longitude"] == 2
     assert loaded_args.spatial_stride == 1
     assert loaded_args.crop_size is None
+
+
+def test_discover_converted_pairs_finds_requested_years(tmp_path):
+    for year in (2016, 2017):
+        year_dir = tmp_path / str(year)
+        year_dir.mkdir()
+        (year_dir / "wind.nc").write_bytes(b"wind")
+        (year_dir / "wave.nc").write_bytes(b"wave")
+
+    pairs = _discover_converted_pairs(tmp_path, (2016, 2017))
+
+    assert [pair.oper_nc for pair in pairs] == [
+        tmp_path / "2016" / "wind.nc",
+        tmp_path / "2017" / "wind.nc",
+    ]
+    assert [pair.wave_nc for pair in pairs] == [
+        tmp_path / "2016" / "wave.nc",
+        tmp_path / "2017" / "wave.nc",
+    ]
+
+
+def test_discover_converted_pairs_reports_missing_files(tmp_path):
+    (tmp_path / "2016").mkdir()
+    (tmp_path / "2016" / "wind.nc").write_bytes(b"wind")
+
+    try:
+        _discover_converted_pairs(tmp_path, (2016,))
+    except FileNotFoundError as exc:
+        assert "wave.nc" in str(exc)
+    else:
+        raise AssertionError("expected FileNotFoundError")

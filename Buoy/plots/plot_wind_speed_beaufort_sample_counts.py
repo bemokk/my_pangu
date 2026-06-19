@@ -13,7 +13,7 @@ import pandas as pd
 from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 
 
-FONT_SCALE = 1.25
+FONT_SCALE = 1.0
 FONT_FAMILY = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
 TEXT_LABELS = {
     "observed_beaufort": "观测蒲福风力等级",
@@ -21,11 +21,11 @@ TEXT_LABELS = {
     "lead_panel": "({panel}) {lead_hour} h预报",
 }
 BASE_FONT_SIZES = {
-    "default": 10.5,
-    "title": 12,
-    "axis_label": 10.5,
-    "tick": 9.5,
-    "bar_label": 8.5,
+    "default": 14,
+    "title": 15,
+    "axis_label": 13,
+    "tick": 12,
+    "bar_label": 11,
 }
 FONT_SIZES = {name: size * FONT_SCALE for name, size in BASE_FONT_SIZES.items()}
 
@@ -121,7 +121,7 @@ def set_plot_style() -> None:
     )
 
 
-def style_axis(ax) -> None:
+def style_axis(ax, show_ylabel: bool = True) -> None:
     ax.set_facecolor("#F4F5F7")
     ax.grid(True, axis="y", color="white", linewidth=1.15)
     ax.set_axisbelow(True)
@@ -130,7 +130,7 @@ def style_axis(ax) -> None:
     ax.set_xticks(range(len(BEAUFORT_ORDER)))
     ax.set_xticklabels(BEAUFORT_ORDER)
     ax.set_xlabel(TEXT_LABELS["observed_beaufort"])
-    ax.set_ylabel(TEXT_LABELS["valid_sample_count"])
+    ax.set_ylabel(TEXT_LABELS["valid_sample_count"] if show_ylabel else "")
 
 
 def add_bar_labels(ax, bars) -> None:
@@ -176,7 +176,7 @@ def plot_sample_counts(counts: pd.DataFrame) -> None:
             fontweight="bold",
         )
         ax.set_ylim(0, max_n * 1.16)
-        style_axis(ax)
+        style_axis(ax, show_ylabel=panel_index == 0)
 
     fig.tight_layout(rect=[0.02, 0.03, 0.98, 0.98])
     fig.savefig(OUT_PNG, bbox_inches="tight")

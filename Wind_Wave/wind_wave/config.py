@@ -27,5 +27,13 @@ def extracted_data_dir(year: str = "2025") -> Path:
     return data_dir() / "extracted" / year
 
 
+def grib_raw_data_dir() -> Path:
+    return data_dir() / "raw"
+
+
+def converted_data_dir() -> Path:
+    return data_dir() / "converted"
+
+
 def outputs_dir() -> Path:
     return project_root() / "outputs"

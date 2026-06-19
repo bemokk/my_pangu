@@ -19,16 +19,16 @@ from land_mask import filter_ocean_records, load_land_union
 from paths import CHINA_SEA_RECORDS_DIR, DEFAULT_CHINA_SEA_DETAIL_CSV, FIGURES_DIR
 
 
-FONT_SCALE = 1.25
-FONT_FAMILY = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
+FONT_SCALE = 1
+FONT_FAMILY = ["Microsoft YaHei", "SimHei", "Times New Roman"]
 TEXT_LABELS = {
     "colorbar": "每个六边形网格的记录数",
 }
 BASE_FONT_SIZES = {
-    "default": 10,
-    "axis_label": 10,
-    "tick": 9,
-    "annotation": 8,
+    "default": 12,
+    "axis_label": 28,
+    "tick": 20,
+    "annotation": 14,
 }
 FONT_SIZES = {name: size * FONT_SCALE for name, size in BASE_FONT_SIZES.items()}
 
@@ -60,6 +60,23 @@ def regular_hexagon(center_lon: float, center_lat: float, side_deg: float) -> Po
         for angle in angles
     ]
     return Polygon(coords)
+
+
+def select_hex_label_point(hexagon: Polygon, ocean_area):
+    safe_extent = box(
+        LON_MIN + LABEL_EDGE_MARGIN_DEG,
+        LAT_MIN + LABEL_EDGE_MARGIN_DEG,
+        LON_MAX - LABEL_EDGE_MARGIN_DEG,
+        LAT_MAX - LABEL_EDGE_MARGIN_DEG,
+    )
+    center = hexagon.centroid
+    if safe_extent.covers(center) and ocean_area.covers(center):
+        return center
+
+    visible_ocean_part = hexagon.intersection(ocean_area).intersection(safe_extent)
+    if visible_ocean_part.is_empty:
+        return None
+    return visible_ocean_part.representative_point()
 
 
 def generate_hex_grid(area_polygon: Polygon, side_deg: float) -> pd.DataFrame:
@@ -202,14 +219,8 @@ def plot_hex_counts(hexes: pd.DataFrame, land_union, ocean_area, records: pd.Dat
         count = int(row["record_count"])
         if count == 0 and not LABEL_ZERO_CELLS:
             continue
-        ocean_part = row.geometry.intersection(ocean_area)
-        if ocean_part.is_empty:
-            continue
-        label_point = ocean_part.representative_point()
-        if not (
-            LON_MIN + LABEL_EDGE_MARGIN_DEG <= label_point.x <= LON_MAX - LABEL_EDGE_MARGIN_DEG
-            and LAT_MIN + LABEL_EDGE_MARGIN_DEG <= label_point.y <= LAT_MAX - LABEL_EDGE_MARGIN_DEG
-        ):
+        label_point = select_hex_label_point(row.geometry, ocean_area)
+        if label_point is None:
             continue
 
         ax.text(
@@ -243,7 +254,7 @@ def plot_hex_counts(hexes: pd.DataFrame, land_union, ocean_area, records: pd.Dat
         sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
         sm.set_array([])
         cbar = fig.colorbar(sm, ax=ax, orientation="vertical", shrink=0.62, pad=0.02)
-        cbar.set_label(TEXT_LABELS["colorbar"], fontsize=FONT_SIZES["axis_label"])
+        cbar.set_label(TEXT_LABELS["colorbar"], fontsize=FONT_SIZES["default"])
         cbar.ax.tick_params(labelsize=FONT_SIZES["tick"])
 
     fig.savefig(HEX_COUNTS_PNG, dpi=260, bbox_inches="tight")

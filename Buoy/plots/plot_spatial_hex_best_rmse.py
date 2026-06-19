@@ -14,7 +14,7 @@ from matplotlib.path import Path as MplPath
 from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 
 
-FONT_SCALE = 1.25
+FONT_SCALE = 1.0
 FONT_FAMILY = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
 TEXT_LABELS = {
     "era5_lagged_5d": "ERA5延迟5天预报",
@@ -24,15 +24,15 @@ TEXT_LABELS = {
     "insufficient_data": "匹配样本不足阈值",
     "no_matched_sample": "无匹配样本",
     "no_eligible_hexagons": "没有六边形满足样本阈值",
-    "lead_panel": "({panel}) {lead_hour} h预报",
+    "lead_panel": "({panel}) {lead_hour}h预报",
 }
 BASE_FONT_SIZES = {
-    "default": 10,
-    "title": 12,
-    "axis_label": 10,
-    "legend": 9,
-    "tick": 9,
-    "summary": 7.6,
+    "default": 12,
+    "title": 16,
+    "axis_label": 15,
+    "legend": 12,
+    "tick": 18,
+    "summary": 14,
 }
 FONT_SIZES = {name: size * FONT_SCALE for name, size in BASE_FONT_SIZES.items()}
 

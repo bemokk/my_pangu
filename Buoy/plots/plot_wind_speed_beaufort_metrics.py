@@ -13,21 +13,21 @@ import pandas as pd
 from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 
 
-FONT_SCALE = 1.25
+FONT_SCALE = 1
 FONT_FAMILY = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
 TEXT_LABELS = {
     "era5_realtime": "ERA5实时场",
     "era5_lagged_5d": "ERA5延迟5天预报",
     "gdas_forecast": "GDAS实时预报",
     "observed_beaufort": "观测蒲福风力等级",
-    "lead_panel": "({panel}) {lead_hour} h预报",
+    "lead_panel": "({panel}) {lead_hour}h预报",
 }
 BASE_FONT_SIZES = {
-    "default": 10.5,
-    "title": 12,
-    "axis_label": 10.5,
-    "legend": 9.5,
-    "tick": 9.5,
+    "default": 12,
+    "title": 15,
+    "axis_label": 13,
+    "legend": 12,
+    "tick": 12,
 }
 FONT_SIZES = {name: size * FONT_SCALE for name, size in BASE_FONT_SIZES.items()}
 
@@ -129,7 +129,7 @@ def set_plot_style() -> None:
     )
 
 
-def style_axis(ax, ylabel: str) -> None:
+def style_axis(ax, ylabel: str, show_xlabel: bool = True) -> None:
     ax.set_facecolor("#F4F5F7")
     ax.grid(True, color="white", linewidth=1.1)
     ax.set_axisbelow(True)
@@ -138,7 +138,7 @@ def style_axis(ax, ylabel: str) -> None:
     ax.set_xlim(-0.25, len(BEAUFORT_ORDER) - 0.75)
     ax.set_xticks(range(len(BEAUFORT_ORDER)))
     ax.set_xticklabels(BEAUFORT_ORDER)
-    ax.set_xlabel(TEXT_LABELS["observed_beaufort"])
+    ax.set_xlabel(TEXT_LABELS["observed_beaufort"] if show_xlabel else "")
     ax.set_ylabel(ylabel)
 
 
@@ -167,7 +167,7 @@ def plot_metric_panel(ax, df: pd.DataFrame, lead_hour: int, metric: str, ylabel:
         loc="left",
         fontweight="bold",
     )
-    style_axis(ax, ylabel)
+    style_axis(ax, ylabel, show_xlabel=panel_index == len(LEAD_HOURS) - 1)
 
 
 def make_metric_figure(df: pd.DataFrame, metric: str) -> None:

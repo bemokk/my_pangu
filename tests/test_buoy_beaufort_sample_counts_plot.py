@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+from matplotlib.figure import Figure
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -31,3 +32,14 @@ def test_load_sample_counts_collapses_duplicate_dataset_counts(tmp_path):
     assert result["obs_beaufort_group"].tolist() == ["<=2", "3", ">=8"]
     assert result["beaufort_code"].tolist() == [0, 1, 6]
     assert result["n"].tolist() == [10, 11, 12]
+
+
+def test_style_axis_keeps_valid_sample_count_on_first_panel_only():
+    fig = Figure()
+    first_ax, later_ax = fig.subplots(1, 2)
+
+    sample_plot.style_axis(first_ax, show_ylabel=True)
+    sample_plot.style_axis(later_ax, show_ylabel=False)
+
+    assert first_ax.get_ylabel() == sample_plot.TEXT_LABELS["valid_sample_count"]
+    assert later_ax.get_ylabel() == ""

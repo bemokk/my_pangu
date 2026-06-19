@@ -14,8 +14,8 @@ from lead_zero_metrics import append_lead_zero_rows, build_lead_zero_metric_rows
 from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 
 
-FONT_SCALE = 1.25
-FONT_FAMILY = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
+FONT_SCALE = 1
+FONT_FAMILY = ["Times New Roman", "SimSun", "SimHei", "DejaVu Serif"]
 TEXT_LABELS = {
     "era5_realtime": "ERA5实时场",
     "era5_lagged_5d": "ERA5延迟5天预报",
@@ -24,11 +24,11 @@ TEXT_LABELS = {
     "correlation": "相关系数",
 }
 BASE_FONT_SIZES = {
-    "default": 11,
-    "title": 13,
-    "axis_label": 11,
-    "legend": 10,
-    "tick": 10,
+    "default": 14,
+    "title": 15,
+    "axis_label": 13,
+    "legend": 12,
+    "tick": 12,
 }
 FONT_SIZES = {name: size * FONT_SCALE for name, size in BASE_FONT_SIZES.items()}
 
@@ -96,28 +96,35 @@ def load_metrics(csv_path: Path, include_lead_zero: bool = False) -> pd.DataFram
 def set_plot_style() -> None:
     plt.rcParams.update(
         {
-            "font.family": "sans-serif",
-            "font.sans-serif": FONT_FAMILY,
+            "font.family": "serif",
+            "font.serif": FONT_FAMILY,
+            "font.sans-serif": ["SimHei", "SimSun", "DejaVu Sans"],
+            "mathtext.fontset": "stix",
             "font.size": FONT_SIZES["default"],
             "axes.titlesize": FONT_SIZES["title"],
             "axes.labelsize": FONT_SIZES["axis_label"],
             "legend.fontsize": FONT_SIZES["legend"],
             "xtick.labelsize": FONT_SIZES["tick"],
             "ytick.labelsize": FONT_SIZES["tick"],
-            "axes.linewidth": 0.8,
+            "axes.linewidth": 1.0,
             "axes.unicode_minus": False,
+            "figure.facecolor": "white",
+            "axes.facecolor": "white",
             "figure.dpi": 140,
             "savefig.dpi": 300,
+            "savefig.facecolor": "white",
         }
     )
 
 
 def style_axis(ax, ylabel: str) -> None:
-    ax.set_facecolor("#F4F5F7")
-    ax.grid(True, color="white", linewidth=1.15)
+    ax.set_facecolor("white")
+    ax.grid(True, color="#BFBFBF", linewidth=0.8, linestyle="--", alpha=0.7)
     ax.set_axisbelow(True)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_color("#333333")
+        spine.set_linewidth(1.0)
     ax.set_xlim(-1, 73)
     ax.set_xticks(X_TICKS)
     ax.set_xlabel(TEXT_LABELS["lead_time"])
@@ -137,7 +144,7 @@ def plot_metric(ax, df: pd.DataFrame, metric: str, title: str, ylabel: str) -> N
             color=style["color"],
             marker=style["marker"],
             markersize=4.0,
-            linewidth=1.7,
+            linewidth=1.35,
             linestyle=style["linestyle"],
         )
 
@@ -162,8 +169,8 @@ def make_figure(df: pd.DataFrame) -> None:
         loc="upper left",
         frameon=True,
         facecolor="white",
-        edgecolor="#DDDDDD",
-        framealpha=0.88,
+        edgecolor="#CFCFCF",
+        framealpha=0.82,
         borderaxespad=0.2,
     )
     fig.tight_layout(rect=[0.04, 0.02, 0.98, 0.99])

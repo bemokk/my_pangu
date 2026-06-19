@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import pandas as pd
 
 
@@ -69,3 +70,15 @@ def test_load_beaufort_metrics_filters_three_datasets_and_target_leads(tmp_path)
     assert result["lead_hour"].tolist() == [24, 48, 72]
     assert result["beaufort_code"].tolist() == [0, 1, 6]
     assert result["obs_beaufort_group"].tolist() == ["<=2", "3", ">=8"]
+
+
+def test_style_axis_only_shows_observed_beaufort_label_when_requested():
+    fig, (upper_ax, lower_ax) = plt.subplots(2, 1)
+    try:
+        beaufort_plot.style_axis(upper_ax, "RMSE", show_xlabel=False)
+        beaufort_plot.style_axis(lower_ax, "RMSE", show_xlabel=True)
+
+        assert upper_ax.get_xlabel() == ""
+        assert lower_ax.get_xlabel() == beaufort_plot.TEXT_LABELS["observed_beaufort"]
+    finally:
+        plt.close(fig)

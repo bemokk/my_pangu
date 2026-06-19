@@ -24,6 +24,16 @@ def test_train_parser_accepts_v2_variants_and_run_name():
     assert args.run_name == "m2_wave0_residual"
 
 
+def test_train_parser_accepts_converted_multi_year_data():
+    args = build_train_parser().parse_args(
+        ["--data-source", "converted", "--years", "2016:2024", "--converted-dir", "data/converted"]
+    )
+
+    assert args.data_source == "converted"
+    assert args.years == "2016:2024"
+    assert str(args.converted_dir) == "data\\converted" or str(args.converted_dir) == "data/converted"
+
+
 def test_eval_parser_accepts_checkpoint_argument():
     args = build_eval_parser().parse_args(["--checkpoint", "model.pt"])
 

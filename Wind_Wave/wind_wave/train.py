@@ -18,10 +18,12 @@ from .config import (
     DEFAULT_INPUT_REGION,
     DEFAULT_LEAD_HOURS,
     DEFAULT_OUTPUT_REGION,
+    converted_data_dir,
     extracted_data_dir,
     outputs_dir,
     raw_data_dir,
 )
+from .convert_grib import parse_years
 from .dataset import (
     NormalizationStats,
     WindWaveSeq2SeqDataset,
@@ -56,6 +58,9 @@ def parse_lead_hours(value: str) -> tuple[int, ...]:
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train a ConvLSTM wind-to-wave seq2seq model.")
     parser.add_argument("--year", default="2025")
+    parser.add_argument("--years", default=None)
+    parser.add_argument("--data-source", default="zip", choices=("zip", "converted"))
+    parser.add_argument("--converted-dir", type=Path, default=converted_data_dir())
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
@@ -129,6 +134,28 @@ def _open_pairs(pairs: list[ExtractedPair]) -> tuple[xr.Dataset, xr.Dataset]:
     return wind, wave
 
 
+def _discover_converted_pairs(converted_root: Path, years: Sequence[int]) -> list[ExtractedPair]:
+    pairs = []
+    for year in years:
+        year_dir = Path(converted_root) / str(year)
+        wind_nc = year_dir / "wind.nc"
+        wave_nc = year_dir / "wave.nc"
+        missing = [str(path) for path in (wind_nc, wave_nc) if not path.exists()]
+        if missing:
+            raise FileNotFoundError(
+                f"Converted NetCDF files are missing for year {year}: {', '.join(missing)}"
+            )
+        pairs.append(
+            ExtractedPair(
+                archive=year_dir,
+                extract_dir=year_dir,
+                oper_nc=wind_nc,
+                wave_nc=wave_nc,
+            )
+        )
+    return pairs
+
+
 def _preload_spatial_datasets(
     wind: xr.Dataset,
     wave: xr.Dataset,
@@ -154,15 +181,20 @@ def _preload_spatial_datasets(
 
 def _prepare_datasets(args: argparse.Namespace) -> tuple[xr.Dataset, xr.Dataset, list[pd.Timestamp], tuple[int, ...]]:
     lead_hours = parse_lead_hours(args.lead_hours)
-    archive_limit = args.max_archives
-    if archive_limit is None and args.max_samples is not None:
-        archive_limit = 1
-
-    pairs = extract_archives(
-        raw_dir=raw_data_dir(args.year),
-        extracted_root=extracted_data_dir(args.year),
-        limit=archive_limit,
-    )
+    if args.data_source == "converted":
+        years = parse_years(args.years or args.year)
+        pairs = _discover_converted_pairs(args.converted_dir, years)
+        if args.max_archives is not None:
+            pairs = pairs[: args.max_archives]
+    else:
+        archive_limit = args.max_archives
+        if archive_limit is None and args.max_samples is not None:
+            archive_limit = 1
+        pairs = extract_archives(
+            raw_dir=raw_data_dir(args.year),
+            extracted_root=extracted_data_dir(args.year),
+            limit=archive_limit,
+        )
     wind, wave = _open_pairs(pairs)
     initialization_times = build_valid_initialization_times(
         wind_times=pd.to_datetime(wind["time"].values),

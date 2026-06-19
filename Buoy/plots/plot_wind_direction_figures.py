@@ -15,6 +15,27 @@ from lead_zero_metrics import append_lead_zero_rows, build_lead_zero_metric_rows
 from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 
 
+FONT_SCALE = 1.0
+FONT_FAMILY = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
+TEXT_LABELS = {
+    "era5_realtime": "ERA5实时场",
+    "era5_lagged_5d": "ERA5延迟5天预报",
+    "gdas_forecast": "GDAS实时预报",
+    "observed": "观测",
+    "lead_time": "预报时效（h）",
+    "rmse": "RMSE (degree)",
+    "mae": "MAE (degree)",
+    "lead_panel": "({panel}) {lead_hour}h预报",
+}
+BASE_FONT_SIZES = {
+    "default": 14,
+    "title": 15,
+    "axis_label": 13,
+    "legend": 12,
+    "tick": 12,
+}
+FONT_SIZES = {name: size * FONT_SCALE for name, size in BASE_FONT_SIZES.items()}
+
 STATS_DIR = WIND_MODEL_STATISTICS_DIR / "wind_model_statistics_3_72h"
 DIRECTION_METRICS_CSV = STATS_DIR / "wind_direction_metrics_by_lead.csv"
 DIRECTION_FREQUENCY_CSV = STATS_DIR / "wind_direction_frequency_by_lead.csv"
@@ -27,6 +48,8 @@ OUT_FREQUENCY_SVG = FIGURES_DIR / "wind_direction_frequency_radar_24_48_72h.svg"
 METRICS_LEAD_HOURS = list(range(0, 73, 3))
 FREQUENCY_LEAD_HOURS = [24, 48, 72]
 X_TICKS = [0, 12, 24, 36, 48, 60, 72]
+FREQUENCY_LEGEND_BBOX = (-0.6, 1.22)
+SHOW_FREQUENCY_RADIAL_TICK_LABELS = False
 
 DIRECTION_SECTORS = [
     "N",
@@ -50,19 +73,19 @@ SECTOR_TO_CODE = {sector: index for index, sector in enumerate(DIRECTION_SECTORS
 
 DATASET_STYLES = {
     "era5_realtime": {
-        "label": "ERA5 realtime",
+        "label": TEXT_LABELS["era5_realtime"],
         "color": "#C44E52",
         "marker": "o",
         "linestyle": "-",
     },
     "era5_lagged_5d": {
-        "label": "ERA5 lagged 5d forecast",
+        "label": TEXT_LABELS["era5_lagged_5d"],
         "color": "#4C72B0",
         "marker": "s",
         "linestyle": "-",
     },
     "gdas_forecast": {
-        "label": "GDAS forecast",
+        "label": TEXT_LABELS["gdas_forecast"],
         "color": "#55A868",
         "marker": "^",
         "linestyle": "-",
@@ -71,7 +94,7 @@ DATASET_STYLES = {
 DATASET_ORDER = tuple(DATASET_STYLES)
 
 OBS_STYLE = {
-    "label": "Observed",
+    "label": TEXT_LABELS["observed"],
     "color": "#CC79A7",
     "marker": "D",
     "linestyle": "-",
@@ -146,14 +169,16 @@ def load_direction_frequency(csv_path: Path = DIRECTION_FREQUENCY_CSV) -> pd.Dat
 def set_plot_style() -> None:
     plt.rcParams.update(
         {
-            "font.family": "Times New Roman",
-            "font.size": 10.5,
-            "axes.titlesize": 12,
-            "axes.labelsize": 10.5,
-            "legend.fontsize": 9.5,
-            "xtick.labelsize": 9.5,
-            "ytick.labelsize": 9.5,
+            "font.family": "sans-serif",
+            "font.sans-serif": FONT_FAMILY,
+            "font.size": FONT_SIZES["default"],
+            "axes.titlesize": FONT_SIZES["title"],
+            "axes.labelsize": FONT_SIZES["axis_label"],
+            "legend.fontsize": FONT_SIZES["legend"],
+            "xtick.labelsize": FONT_SIZES["tick"],
+            "ytick.labelsize": FONT_SIZES["tick"],
             "axes.linewidth": 0.8,
+            "axes.unicode_minus": False,
             "figure.dpi": 140,
             "savefig.dpi": 300,
         }
@@ -168,7 +193,7 @@ def style_metric_axis(ax, ylabel: str) -> None:
     ax.spines["right"].set_visible(False)
     ax.set_xlim(-1, 73)
     ax.set_xticks(X_TICKS)
-    ax.set_xlabel("Forecast lead time (h)")
+    ax.set_xlabel(TEXT_LABELS["lead_time"])
     ax.set_ylabel(ylabel)
 
 
@@ -197,8 +222,8 @@ def make_direction_metrics_figure(df: pd.DataFrame) -> None:
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
     fig, axes = plt.subplots(2, 1, figsize=(7.2, 7.6), constrained_layout=False)
-    plot_direction_metric(axes[0], df, "rmse", "(a) RMSE", "RMSE (degree)")
-    plot_direction_metric(axes[1], df, "mae", "(b) MAE", "MAE (degree)")
+    plot_direction_metric(axes[0], df, "rmse", "(a) RMSE", TEXT_LABELS["rmse"])
+    plot_direction_metric(axes[1], df, "mae", "(b) MAE", TEXT_LABELS["mae"])
 
     handles, labels = axes[0].get_legend_handles_labels()
     axes[0].legend(
@@ -215,17 +240,7 @@ def make_direction_metrics_figure(df: pd.DataFrame) -> None:
         ymin, ymax = ax.get_ylim()
         ax.set_ylim(ymin, ymax + (ymax - ymin) * 0.22)
 
-    fig.suptitle("Wind Direction Forecast Error Against China Sea Buoy Observations", y=0.985, fontsize=14)
-    fig.text(
-        0.5,
-        0.01,
-        "Lead times are 0 h and every 3 hours from 3 h to 72 h. Direction errors use circular angular differences.",
-        ha="center",
-        va="bottom",
-        fontsize=9,
-        color="#555555",
-    )
-    fig.tight_layout(rect=[0.04, 0.06, 0.98, 0.945])
+    fig.tight_layout(rect=[0.04, 0.03, 0.98, 0.98])
     fig.savefig(OUT_METRICS_PNG, bbox_inches="tight")
     fig.savefig(OUT_METRICS_SVG, bbox_inches="tight")
     plt.close(fig)
@@ -289,7 +304,10 @@ def make_direction_frequency_figure(df: pd.DataFrame) -> None:
         ax.set_xticklabels(DIRECTION_SECTORS)
         ax.set_ylim(0, radial_max)
         ax.set_yticks(np.linspace(0, radial_max, 5)[1:])
-        ax.set_yticklabels([f"{value:.0%}" for value in np.linspace(0, radial_max, 5)[1:]])
+        if SHOW_FREQUENCY_RADIAL_TICK_LABELS:
+            ax.set_yticklabels([f"{value:.0%}" for value in np.linspace(0, radial_max, 5)[1:]])
+        else:
+            ax.set_yticklabels([])
         ax.grid(True, color="#D9D9D9", linewidth=0.75)
 
         obs = observation_frequency(df, lead_hour)
@@ -317,17 +335,21 @@ def make_direction_frequency_figure(df: pd.DataFrame) -> None:
                 markersize=3.2,
                 linewidth=1.45,
                 linestyle=style["linestyle"],
-            )
+        )
 
         panel_letter = chr(ord("a") + panel_index)
-        ax.set_title(f"({panel_letter}) Lead {lead_hour} h", y=1.1, fontweight="bold")
+        ax.set_title(
+            TEXT_LABELS["lead_panel"].format(panel=panel_letter, lead_hour=lead_hour),
+            y=1.1,
+            fontweight="bold",
+        )
 
     handles, labels = axes[0].get_legend_handles_labels()
     axes[0].legend(
         handles,
         labels,
         loc="upper left",
-        bbox_to_anchor=(-0.34, 1.22),
+        bbox_to_anchor=FREQUENCY_LEGEND_BBOX,
         frameon=True,
         facecolor="white",
         edgecolor="#DDDDDD",

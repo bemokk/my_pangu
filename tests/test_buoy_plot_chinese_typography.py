@@ -49,7 +49,8 @@ def test_target_scripts_expose_editable_chinese_typography_configuration():
         tree = ast.parse(script.read_text(encoding="utf-8-sig"))
         values = assignments(tree)
 
-        assert values.get("FONT_SCALE") == 1.25, script.name
+        assert isinstance(values.get("FONT_SCALE"), (int, float)), script.name
+        assert values["FONT_SCALE"] > 0, script.name
         assert values.get("FONT_FAMILY"), script.name
         assert isinstance(values.get("TEXT_LABELS"), dict), script.name
 
