@@ -15,7 +15,7 @@ from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 
 
 FONT_SCALE = 1
-FONT_FAMILY = ["Times New Roman", "SimSun", "SimHei", "DejaVu Serif"]
+FONT_FAMILY = ["Times New Roman", "SimSun", "SimHei", "Microsoft YaHei", "DejaVu Serif"]
 TEXT_LABELS = {
     "era5_realtime": "ERA5实时场",
     "era5_lagged_5d": "ERA5延迟5天预报",
@@ -96,7 +96,7 @@ def load_metrics(csv_path: Path, include_lead_zero: bool = False) -> pd.DataFram
 def set_plot_style() -> None:
     plt.rcParams.update(
         {
-            "font.family": "serif",
+            "font.family": FONT_FAMILY,
             "font.serif": FONT_FAMILY,
             "font.sans-serif": ["SimHei", "SimSun", "DejaVu Sans"],
             "mathtext.fontset": "stix",

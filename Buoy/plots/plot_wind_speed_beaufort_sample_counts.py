@@ -14,7 +14,7 @@ from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 
 
 FONT_SCALE = 1.0
-FONT_FAMILY = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
+FONT_FAMILY = ["Times New Roman", "SimSun", "SimHei", "Microsoft YaHei", "DejaVu Serif"]
 TEXT_LABELS = {
     "observed_beaufort": "观测蒲福风力等级",
     "valid_sample_count": "有效样本数",
@@ -106,27 +106,34 @@ def load_sample_counts(csv_path: Path = METRICS_CSV) -> pd.DataFrame:
 def set_plot_style() -> None:
     plt.rcParams.update(
         {
-            "font.family": "sans-serif",
-            "font.sans-serif": FONT_FAMILY,
+            "font.family": FONT_FAMILY,
+            "font.serif": FONT_FAMILY,
+            "font.sans-serif": ["SimHei", "SimSun", "DejaVu Sans"],
+            "mathtext.fontset": "stix",
             "font.size": FONT_SIZES["default"],
             "axes.titlesize": FONT_SIZES["title"],
             "axes.labelsize": FONT_SIZES["axis_label"],
             "xtick.labelsize": FONT_SIZES["tick"],
             "ytick.labelsize": FONT_SIZES["tick"],
-            "axes.linewidth": 0.8,
+            "axes.linewidth": 1.0,
             "axes.unicode_minus": False,
+            "figure.facecolor": "white",
+            "axes.facecolor": "white",
             "figure.dpi": 140,
             "savefig.dpi": 300,
+            "savefig.facecolor": "white",
         }
     )
 
 
 def style_axis(ax, show_ylabel: bool = True) -> None:
-    ax.set_facecolor("#F4F5F7")
-    ax.grid(True, axis="y", color="white", linewidth=1.15)
+    ax.set_facecolor("white")
+    ax.grid(True, axis="y", color="#BFBFBF", linewidth=0.8, linestyle="--", alpha=0.7)
     ax.set_axisbelow(True)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_color("#333333")
+        spine.set_linewidth(1.0)
     ax.set_xticks(range(len(BEAUFORT_ORDER)))
     ax.set_xticklabels(BEAUFORT_ORDER)
     ax.set_xlabel(TEXT_LABELS["observed_beaufort"])

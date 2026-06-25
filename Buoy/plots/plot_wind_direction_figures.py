@@ -16,7 +16,7 @@ from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 
 
 FONT_SCALE = 1.0
-FONT_FAMILY = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
+FONT_FAMILY = ["Times New Roman", "SimSun", "SimHei", "Microsoft YaHei", "DejaVu Serif"]
 TEXT_LABELS = {
     "era5_realtime": "ERA5实时场",
     "era5_lagged_5d": "ERA5延迟5天预报",
@@ -169,28 +169,35 @@ def load_direction_frequency(csv_path: Path = DIRECTION_FREQUENCY_CSV) -> pd.Dat
 def set_plot_style() -> None:
     plt.rcParams.update(
         {
-            "font.family": "sans-serif",
-            "font.sans-serif": FONT_FAMILY,
+            "font.family": FONT_FAMILY,
+            "font.serif": FONT_FAMILY,
+            "font.sans-serif": ["SimHei", "SimSun", "DejaVu Sans"],
+            "mathtext.fontset": "stix",
             "font.size": FONT_SIZES["default"],
             "axes.titlesize": FONT_SIZES["title"],
             "axes.labelsize": FONT_SIZES["axis_label"],
             "legend.fontsize": FONT_SIZES["legend"],
             "xtick.labelsize": FONT_SIZES["tick"],
             "ytick.labelsize": FONT_SIZES["tick"],
-            "axes.linewidth": 0.8,
+            "axes.linewidth": 1.0,
             "axes.unicode_minus": False,
+            "figure.facecolor": "white",
+            "axes.facecolor": "white",
             "figure.dpi": 140,
             "savefig.dpi": 300,
+            "savefig.facecolor": "white",
         }
     )
 
 
 def style_metric_axis(ax, ylabel: str) -> None:
-    ax.set_facecolor("#F4F5F7")
-    ax.grid(True, color="white", linewidth=1.15)
+    ax.set_facecolor("white")
+    ax.grid(True, color="#BFBFBF", linewidth=0.8, linestyle="--", alpha=0.7)
     ax.set_axisbelow(True)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_color("#333333")
+        spine.set_linewidth(1.0)
     ax.set_xlim(-1, 73)
     ax.set_xticks(X_TICKS)
     ax.set_xlabel(TEXT_LABELS["lead_time"])
@@ -209,7 +216,7 @@ def plot_direction_metric(ax, df: pd.DataFrame, metric: str, title: str, ylabel:
             color=style["color"],
             marker=style["marker"],
             markersize=4.0,
-            linewidth=1.65,
+            linewidth=1.35,
             linestyle=style["linestyle"],
         )
 
@@ -232,8 +239,8 @@ def make_direction_metrics_figure(df: pd.DataFrame) -> None:
         loc="upper left",
         frameon=True,
         facecolor="white",
-        edgecolor="#DDDDDD",
-        framealpha=0.9,
+        edgecolor="#CFCFCF",
+        framealpha=0.82,
         borderaxespad=0.2,
     )
     for ax in axes:
@@ -300,6 +307,7 @@ def make_direction_frequency_figure(df: pd.DataFrame) -> None:
     for panel_index, (ax, lead_hour) in enumerate(zip(axes, FREQUENCY_LEAD_HOURS)):
         ax.set_theta_zero_location("N")
         ax.set_theta_direction(-1)
+        ax.set_facecolor("white")
         ax.set_xticks(base_angles)
         ax.set_xticklabels(DIRECTION_SECTORS)
         ax.set_ylim(0, radial_max)
@@ -308,7 +316,10 @@ def make_direction_frequency_figure(df: pd.DataFrame) -> None:
             ax.set_yticklabels([f"{value:.0%}" for value in np.linspace(0, radial_max, 5)[1:]])
         else:
             ax.set_yticklabels([])
-        ax.grid(True, color="#D9D9D9", linewidth=0.75)
+        ax.grid(True, color="#BFBFBF", linewidth=0.8, linestyle="--", alpha=0.7)
+        ax.spines["polar"].set_visible(True)
+        ax.spines["polar"].set_color("#333333")
+        ax.spines["polar"].set_linewidth(1.0)
 
         obs = observation_frequency(df, lead_hour)
         ax.plot(
@@ -318,7 +329,7 @@ def make_direction_frequency_figure(df: pd.DataFrame) -> None:
             color=OBS_STYLE["color"],
             marker=OBS_STYLE["marker"],
             markersize=3.4,
-            linewidth=1.8,
+            linewidth=1.35,
             linestyle=OBS_STYLE["linestyle"],
         )
 
@@ -333,7 +344,7 @@ def make_direction_frequency_figure(df: pd.DataFrame) -> None:
                 color=style["color"],
                 marker=style["marker"],
                 markersize=3.2,
-                linewidth=1.45,
+                linewidth=1.35,
                 linestyle=style["linestyle"],
         )
 
@@ -352,8 +363,8 @@ def make_direction_frequency_figure(df: pd.DataFrame) -> None:
         bbox_to_anchor=FREQUENCY_LEGEND_BBOX,
         frameon=True,
         facecolor="white",
-        edgecolor="#DDDDDD",
-        framealpha=0.9,
+        edgecolor="#CFCFCF",
+        framealpha=0.82,
         borderaxespad=0.2,
     )
     fig.tight_layout(rect=[0.01, 0.04, 0.99, 0.96])

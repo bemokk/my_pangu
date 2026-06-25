@@ -15,7 +15,7 @@ from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 
 
 FONT_SCALE = 1.0
-FONT_FAMILY = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
+FONT_FAMILY = ["Times New Roman", "SimSun", "SimHei", "Microsoft YaHei", "DejaVu Serif"]
 TEXT_LABELS = {
     "era5_lagged_5d": "ERA5延迟5天预报",
     "era5_lagged_5d_short": "ERA5延迟5天",
@@ -328,17 +328,23 @@ def plot_best_rmse_hexes(
 
     plt.rcParams.update(
         {
-            "font.family": "sans-serif",
-            "font.sans-serif": FONT_FAMILY,
+            "font.family": FONT_FAMILY,
+            "font.serif": FONT_FAMILY,
+            "font.sans-serif": ["SimHei", "SimSun", "DejaVu Sans"],
+            "mathtext.fontset": "stix",
             "font.size": FONT_SIZES["default"],
             "axes.titlesize": FONT_SIZES["title"],
             "axes.labelsize": FONT_SIZES["axis_label"],
             "legend.fontsize": FONT_SIZES["legend"],
             "xtick.labelsize": FONT_SIZES["tick"],
             "ytick.labelsize": FONT_SIZES["tick"],
+            "axes.linewidth": 1.0,
             "axes.unicode_minus": False,
+            "figure.facecolor": "white",
+            "axes.facecolor": "white",
             "figure.dpi": 140,
             "savefig.dpi": 300,
+            "savefig.facecolor": "white",
         }
     )
 
@@ -370,6 +376,10 @@ def plot_best_rmse_hexes(
         ax.set_anchor("W")
         ax.set_extent([LON_MIN, LON_MAX, LAT_MIN, LAT_MAX], crs=projection)
         ax.set_facecolor("white")
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_color("#333333")
+            spine.set_linewidth(1.0)
 
         for hex_row in hexes.itertuples(index=False):
             hex_id = int(hex_row.hex_id)
@@ -464,9 +474,9 @@ def plot_best_rmse_hexes(
         loc="upper left",
         bbox_to_anchor=(0.015, 0.985),
         frameon=True,
-        framealpha=0.9,
         facecolor="white",
-        edgecolor="#777777",
+        edgecolor="#CFCFCF",
+        framealpha=0.82,
         borderaxespad=0.0,
     )
     fig.savefig(png_path, bbox_inches="tight")

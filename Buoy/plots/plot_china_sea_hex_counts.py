@@ -20,7 +20,7 @@ from paths import CHINA_SEA_RECORDS_DIR, DEFAULT_CHINA_SEA_DETAIL_CSV, FIGURES_D
 
 
 FONT_SCALE = 1
-FONT_FAMILY = ["Microsoft YaHei", "SimHei", "Times New Roman"]
+FONT_FAMILY = ["Times New Roman", "SimSun", "SimHei", "Microsoft YaHei", "DejaVu Serif"]
 TEXT_LABELS = {
     "colorbar": "每个六边形网格的记录数",
 }
@@ -164,13 +164,20 @@ def save_hex_counts(hexes: pd.DataFrame) -> None:
 def plot_hex_counts(hexes: pd.DataFrame, land_union, ocean_area, records: pd.DataFrame) -> None:
     plt.rcParams.update(
         {
-            "font.family": "sans-serif",
-            "font.sans-serif": FONT_FAMILY,
+            "font.family": FONT_FAMILY,
+            "font.serif": FONT_FAMILY,
+            "font.sans-serif": ["SimHei", "SimSun", "DejaVu Sans"],
+            "mathtext.fontset": "stix",
             "font.size": FONT_SIZES["default"],
             "axes.labelsize": FONT_SIZES["axis_label"],
             "xtick.labelsize": FONT_SIZES["tick"],
             "ytick.labelsize": FONT_SIZES["tick"],
+            "axes.linewidth": 1.0,
             "axes.unicode_minus": False,
+            "figure.facecolor": "white",
+            "axes.facecolor": "white",
+            "savefig.dpi": 300,
+            "savefig.facecolor": "white",
         }
     )
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
@@ -180,6 +187,10 @@ def plot_hex_counts(hexes: pd.DataFrame, land_union, ocean_area, records: pd.Dat
     ax.set_extent([LON_MIN, LON_MAX, LAT_MIN, LAT_MAX], crs=projection)
 
     ax.set_facecolor("white")
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_color("#333333")
+        spine.set_linewidth(1.0)
 
     nonzero = hexes.loc[hexes["record_count"] > 0, "record_count"]
     if nonzero.empty:
