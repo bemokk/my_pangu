@@ -34,6 +34,9 @@ WAVE_CANDIDATES = {
     "mwd": ("mwd", "mean_wave_direction"),
 }
 
+FUTURE_WIND_MODES = ("target", "continuous72")
+CONTINUOUS_FUTURE_HOURS = 72
+
 
 @dataclass(frozen=True)
 class NormalizationStats:
@@ -157,6 +160,32 @@ def _history_times(t0: pd.Timestamp, history_hours: int) -> list[pd.Timestamp]:
 
 def _lead_times(t0: pd.Timestamp, lead_hours: tuple[int, ...]) -> list[pd.Timestamp]:
     return [t0 + pd.Timedelta(hours=lead) for lead in lead_hours]
+
+
+def _validate_future_wind_mode(value: str) -> str:
+    if value not in FUTURE_WIND_MODES:
+        raise ValueError(f"future_wind_mode must be one of {', '.join(FUTURE_WIND_MODES)}")
+    return value
+
+
+def _future_wind_times(
+    t0: pd.Timestamp,
+    lead_hours: tuple[int, ...],
+    future_wind_mode: str,
+) -> list[pd.Timestamp]:
+    mode = _validate_future_wind_mode(future_wind_mode)
+    if mode == "target":
+        return _lead_times(t0, lead_hours)
+    if max(lead_hours) > CONTINUOUS_FUTURE_HOURS:
+        raise ValueError("continuous72 future wind mode only supports lead_hours up to 72")
+    return [t0 + pd.Timedelta(hours=hour) for hour in range(1, CONTINUOUS_FUTURE_HOURS + 1)]
+
+
+def _future_wind_offsets(lead_hours: tuple[int, ...], future_wind_mode: str) -> np.ndarray:
+    mode = _validate_future_wind_mode(future_wind_mode)
+    if mode == "target":
+        return np.arange(len(lead_hours), dtype=np.int64)
+    return np.asarray([int(lead) - 1 for lead in lead_hours], dtype=np.int64)
 
 
 def _accumulate(sum_v: np.ndarray, sumsq_v: np.ndarray, count_v: np.ndarray, arr: np.ndarray) -> None:
@@ -289,6 +318,7 @@ class WindWaveSeq2SeqDataset(Dataset):
         crop_size: int | None = None,
         input_region: Region | None = None,
         output_region: Region | None = None,
+        future_wind_mode: str = "target",
     ) -> None:
         self.wind_ds = wind_ds
         self.wave_ds = wave_ds
@@ -300,6 +330,8 @@ class WindWaveSeq2SeqDataset(Dataset):
         self.crop_size = crop_size
         self.input_region = input_region
         self.output_region = output_region
+        self.future_wind_mode = _validate_future_wind_mode(future_wind_mode)
+        self.future_wind_offsets = _future_wind_offsets(self.lead_hours, self.future_wind_mode)
 
     def __len__(self) -> int:
         return len(self.initialization_times)
@@ -308,6 +340,7 @@ class WindWaveSeq2SeqDataset(Dataset):
         t0 = self.initialization_times[index]
         input_times = _history_times(t0, self.history_hours)
         target_times = _lead_times(t0, self.lead_hours)
+        future_wind_times = _future_wind_times(t0, self.lead_hours, self.future_wind_mode)
 
         inputs = _select_wind_array(
             self.wind_ds,
@@ -318,7 +351,7 @@ class WindWaveSeq2SeqDataset(Dataset):
         )
         future_wind = _select_wind_array(
             self.wind_ds,
-            target_times,
+            future_wind_times,
             self.spatial_stride,
             self.crop_size,
             self.input_region,
@@ -355,9 +388,160 @@ class WindWaveSeq2SeqDataset(Dataset):
         return {
             "inputs": torch.from_numpy(inputs.astype(np.float32)),
             "future_wind": torch.from_numpy(future_wind.astype(np.float32)),
+            "future_wind_offsets": torch.from_numpy(self.future_wind_offsets.copy()),
             "targets": torch.from_numpy(targets.astype(np.float32)),
             "wave0": torch.from_numpy(persistence[0].astype(np.float32)),
             "persistence": torch.from_numpy(persistence.astype(np.float32)),
+            "t0": t0.isoformat(),
+            "input_times": [time.isoformat() for time in input_times],
+            "target_times": [time.isoformat() for time in target_times],
+        }
+
+
+@dataclass(frozen=True)
+class FastInMemoryWindWaveCache:
+    wind_array: np.ndarray
+    wave_array: np.ndarray
+    times: pd.DatetimeIndex
+    time_to_index: dict[pd.Timestamp, int]
+
+    @classmethod
+    def from_datasets(
+        cls,
+        wind_ds: xr.Dataset,
+        wave_ds: xr.Dataset,
+        stats: NormalizationStats,
+        spatial_stride: int = 1,
+        crop_size: int | None = None,
+        input_region: Region | None = None,
+        output_region: Region | None = None,
+    ) -> "FastInMemoryWindWaveCache":
+        wind_names = [find_data_var(wind_ds, WIND_CANDIDATES[key]) for key in ("u10", "v10")]
+        wind_sliced = _spatial_indexer(wind_ds[wind_names], spatial_stride, crop_size, input_region)
+        wind_arrays = [
+            wind_sliced[name].transpose("time", "latitude", "longitude").values.astype(np.float32)
+            for name in wind_names
+        ]
+        wind_array = np.stack(wind_arrays, axis=1)
+
+        wave_names = {
+            key: find_data_var(wave_ds, candidates)
+            for key, candidates in WAVE_CANDIDATES.items()
+        }
+        wave_vars = list(wave_names.values())
+        has_direction_components = "mwd_cos" in wave_ds.data_vars and "mwd_sin" in wave_ds.data_vars
+        if has_direction_components:
+            wave_vars.extend(["mwd_cos", "mwd_sin"])
+        wave_sliced = _spatial_indexer(wave_ds[wave_vars], spatial_stride, crop_size, output_region)
+        swh = wave_sliced[wave_names["swh"]].transpose("time", "latitude", "longitude").values.astype(np.float32)
+        mwp = wave_sliced[wave_names["mwp"]].transpose("time", "latitude", "longitude").values.astype(np.float32)
+        if has_direction_components:
+            cos_mwd = wave_sliced["mwd_cos"].transpose("time", "latitude", "longitude").values.astype(np.float32)
+            sin_mwd = wave_sliced["mwd_sin"].transpose("time", "latitude", "longitude").values.astype(np.float32)
+        else:
+            mwd = wave_sliced[wave_names["mwd"]].transpose("time", "latitude", "longitude").values.astype(np.float32)
+            sin_mwd, cos_mwd = direction_degrees_to_unit(mwd)
+        wave_array = np.stack([swh, mwp, cos_mwd, sin_mwd], axis=1)
+
+        wind_times = pd.DatetimeIndex(pd.to_datetime(wind_sliced["time"].values))
+        wave_times = pd.DatetimeIndex(pd.to_datetime(wave_sliced["time"].values))
+        if not wind_times.equals(wave_times):
+            raise ValueError("Fast in-memory dataset requires aligned wind and wave time coordinates")
+
+        wind_array = np.ascontiguousarray(
+            (wind_array - stats.input_mean[None, :, None, None]) / stats.input_std[None, :, None, None],
+            dtype=np.float32,
+        )
+        wave_array = np.ascontiguousarray(
+            (wave_array - stats.target_mean[None, :, None, None]) / stats.target_std[None, :, None, None],
+            dtype=np.float32,
+        )
+        time_to_index = {pd.Timestamp(value): index for index, value in enumerate(wind_times)}
+        return cls(
+            wind_array=wind_array,
+            wave_array=wave_array,
+            times=wind_times,
+            time_to_index=time_to_index,
+        )
+
+
+class FastInMemoryWindWaveDataset(Dataset):
+    def __init__(
+        self,
+        wind_ds: xr.Dataset,
+        wave_ds: xr.Dataset,
+        initialization_times: list[pd.Timestamp],
+        stats: NormalizationStats,
+        history_hours: int = DEFAULT_HISTORY_HOURS,
+        lead_hours: tuple[int, ...] = DEFAULT_LEAD_HOURS,
+        spatial_stride: int = 1,
+        crop_size: int | None = None,
+        input_region: Region | None = None,
+        output_region: Region | None = None,
+        cache: FastInMemoryWindWaveCache | None = None,
+        future_wind_mode: str = "target",
+    ) -> None:
+        self.initialization_times = [pd.Timestamp(value) for value in initialization_times]
+        self.history_hours = int(history_hours)
+        self.lead_hours = tuple(int(value) for value in lead_hours)
+        self.lead_offsets = np.asarray(self.lead_hours, dtype=np.int64)
+        self.future_wind_mode = _validate_future_wind_mode(future_wind_mode)
+        self.future_wind_offsets = _future_wind_offsets(self.lead_hours, self.future_wind_mode)
+        if cache is None:
+            cache = FastInMemoryWindWaveCache.from_datasets(
+                wind_ds,
+                wave_ds,
+                stats=stats,
+                spatial_stride=spatial_stride,
+                crop_size=crop_size,
+                input_region=input_region,
+                output_region=output_region,
+            )
+        self.wind_array = cache.wind_array
+        self.wave_array = cache.wave_array
+        self.times = cache.times
+        self.time_to_index = cache.time_to_index
+        self.initialization_indices = np.asarray(
+            [self.time_to_index[pd.Timestamp(value)] for value in self.initialization_times],
+            dtype=np.int64,
+        )
+
+    def __len__(self) -> int:
+        return len(self.initialization_times)
+
+    def __getitem__(self, index: int) -> dict[str, Any]:
+        t0 = self.initialization_times[index]
+        t0_index = int(self.initialization_indices[index])
+        history_indices = np.arange(
+            t0_index - self.history_hours + 1,
+            t0_index + 1,
+            dtype=np.int64,
+        )
+        lead_indices = t0_index + self.lead_offsets
+        if self.future_wind_mode == "target":
+            future_indices = lead_indices
+        else:
+            future_indices = np.arange(
+                t0_index + 1,
+                t0_index + CONTINUOUS_FUTURE_HOURS + 1,
+                dtype=np.int64,
+            )
+
+        inputs = np.ascontiguousarray(self.wind_array[history_indices])
+        future_wind = np.ascontiguousarray(self.wind_array[future_indices])
+        targets = np.ascontiguousarray(self.wave_array[lead_indices])
+        persistence = np.repeat(self.wave_array[t0_index : t0_index + 1], len(self.lead_hours), axis=0)
+        persistence = np.ascontiguousarray(persistence)
+
+        input_times = _history_times(t0, self.history_hours)
+        target_times = _lead_times(t0, self.lead_hours)
+        return {
+            "inputs": torch.from_numpy(inputs),
+            "future_wind": torch.from_numpy(future_wind),
+            "future_wind_offsets": torch.from_numpy(self.future_wind_offsets.copy()),
+            "targets": torch.from_numpy(targets),
+            "wave0": torch.from_numpy(persistence[0]),
+            "persistence": torch.from_numpy(persistence),
             "t0": t0.isoformat(),
             "input_times": [time.isoformat() for time in input_times],
             "target_times": [time.isoformat() for time in target_times],

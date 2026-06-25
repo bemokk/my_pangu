@@ -4,7 +4,14 @@ import xarray as xr
 from types import SimpleNamespace
 
 from wind_wave.extract import ExtractedPair
-from wind_wave.train import _discover_converted_pairs, _open_pairs, _preload_spatial_datasets
+from wind_wave.train import (
+    _discover_converted_pairs,
+    _load_zarr_normalization_stats,
+    _load_zarr_split_times,
+    _open_pairs,
+    _prepare_datasets,
+    _preload_spatial_datasets,
+)
 
 
 def test_open_single_pair_preserves_native_wind_and_wave_grids(tmp_path, monkeypatch):
@@ -216,3 +223,78 @@ def test_discover_converted_pairs_reports_missing_files(tmp_path):
         assert "wave.nc" in str(exc)
     else:
         raise AssertionError("expected FileNotFoundError")
+
+
+def test_prepare_zarr_datasets_uses_metadata_indices_and_stats(tmp_path):
+    zarr_dir = tmp_path / "zarr"
+    metadata_dir = tmp_path / "metadata"
+    metadata_dir.mkdir()
+    times = pd.date_range("2016-01-01", periods=100, freq="h")
+    wind = xr.Dataset(
+        {
+            "u10": (("time", "latitude", "longitude"), np.zeros((100, 2, 2), dtype=np.float32)),
+            "v10": (("time", "latitude", "longitude"), np.ones((100, 2, 2), dtype=np.float32)),
+        },
+        coords={"time": times, "latitude": [5.0, 6.0], "longitude": [95.0, 96.0]},
+    )
+    wave = xr.Dataset(
+        {
+            "swh": (("time", "latitude", "longitude"), np.ones((100, 1, 1), dtype=np.float32)),
+            "mwp": (("time", "latitude", "longitude"), np.full((100, 1, 1), 2.0, dtype=np.float32)),
+            "mwd": (("time", "latitude", "longitude"), np.full((100, 1, 1), 90.0, dtype=np.float32)),
+            "mwd_cos": (("time", "latitude", "longitude"), np.zeros((100, 1, 1), dtype=np.float32)),
+            "mwd_sin": (("time", "latitude", "longitude"), np.ones((100, 1, 1), dtype=np.float32)),
+        },
+        coords={"time": times, "latitude": [5.0], "longitude": [95.0]},
+    )
+    wind.to_zarr(zarr_dir / "era5_wind_025_5N45N_95E150E.zarr", consolidated=True, zarr_format=2)
+    wave.to_zarr(zarr_dir / "era5_wave_050_5N45N_95E150E.zarr", consolidated=True, zarr_format=2)
+    np.save(metadata_dir / "common_times.npy", times.values.astype("datetime64[ns]"))
+    np.save(metadata_dir / "sample_t0_indices.npy", np.array([23, 24, 25, 26], dtype=np.int64))
+    np.save(metadata_dir / "train_indices.npy", np.array([23, 24], dtype=np.int64))
+    np.save(metadata_dir / "val_indices.npy", np.array([25], dtype=np.int64))
+    np.save(metadata_dir / "test_indices.npy", np.array([26], dtype=np.int64))
+    (metadata_dir / "normalization.json").write_text(
+        """
+        {
+          "wind": {
+            "u10": {"mean": 1.0, "std": 2.0},
+            "v10": {"mean": 3.0, "std": 4.0}
+          },
+          "wave": {
+            "swh": {"mean": 5.0, "std": 6.0},
+            "mwp": {"mean": 7.0, "std": 8.0},
+            "mwd_cos": {"mean": 9.0, "std": 10.0},
+            "mwd_sin": {"mean": 11.0, "std": 12.0}
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    args = SimpleNamespace(
+        data_source="zarr",
+        zarr_dir=zarr_dir,
+        metadata_dir=metadata_dir,
+        lead_hours="6,12,24",
+        history_hours=24,
+        max_samples=None,
+    )
+
+    opened_wind, opened_wave, initialization_times, lead_hours = _prepare_datasets(args)
+    train_times, val_times, test_times = _load_zarr_split_times(metadata_dir)
+    stats = _load_zarr_normalization_stats(metadata_dir)
+
+    assert opened_wind.sizes["time"] == 100
+    assert opened_wave.sizes["time"] == 100
+    assert opened_wind["u10"].chunks is None
+    assert opened_wave["swh"].chunks is None
+    assert lead_hours == (6, 12, 24)
+    assert initialization_times == list(times[[23, 24, 25, 26]])
+    assert train_times == list(times[[23, 24]])
+    assert val_times == [times[25]]
+    assert test_times == [times[26]]
+    np.testing.assert_allclose(stats.input_mean, [1.0, 3.0])
+    np.testing.assert_allclose(stats.input_std, [2.0, 4.0])
+    np.testing.assert_allclose(stats.target_mean, [5.0, 7.0, 9.0, 11.0])
+    np.testing.assert_allclose(stats.target_std, [6.0, 8.0, 10.0, 12.0])

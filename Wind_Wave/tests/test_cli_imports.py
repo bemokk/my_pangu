@@ -34,6 +34,16 @@ def test_train_parser_accepts_converted_multi_year_data():
     assert str(args.converted_dir) == "data\\converted" or str(args.converted_dir) == "data/converted"
 
 
+def test_train_parser_accepts_zarr_cache_data():
+    args = build_train_parser().parse_args(
+        ["--data-source", "zarr", "--zarr-dir", "data/zarr", "--metadata-dir", "data/metadata"]
+    )
+
+    assert args.data_source == "zarr"
+    assert str(args.zarr_dir) == "data\\zarr" or str(args.zarr_dir) == "data/zarr"
+    assert str(args.metadata_dir) == "data\\metadata" or str(args.metadata_dir) == "data/metadata"
+
+
 def test_eval_parser_accepts_checkpoint_argument():
     args = build_eval_parser().parse_args(["--checkpoint", "model.pt"])
 

@@ -5,6 +5,8 @@ import xarray as xr
 
 import wind_wave.dataset as dataset_module
 from wind_wave.dataset import (
+    FastInMemoryWindWaveCache,
+    FastInMemoryWindWaveDataset,
     NormalizationStats,
     WindWaveSeq2SeqDataset,
     _history_times,
@@ -91,6 +93,143 @@ def test_dataset_returns_expected_seq2seq_shapes_with_stride():
         .values
     )
     np.testing.assert_allclose(sample["future_wind"][0, 0].numpy(), expected_future_u10)
+
+
+def test_dataset_can_return_continuous_72h_future_wind():
+    wind, wave = make_synthetic_pair()
+    stats = NormalizationStats.identity(
+        input_names=("u10", "v10"),
+        target_names=("swh", "mwp", "cos_mwd", "sin_mwd"),
+    )
+    ds = WindWaveSeq2SeqDataset(
+        wind,
+        wave,
+        initialization_times=[pd.Timestamp("2025-01-02T00:00")],
+        stats=stats,
+        history_hours=4,
+        lead_hours=(6, 12, 72),
+        spatial_stride=2,
+        future_wind_mode="continuous72",
+    )
+
+    sample = ds[0]
+
+    assert sample["future_wind"].shape == (72, 2, 6, 7)
+    assert sample["future_wind_offsets"].tolist() == [5, 11, 71]
+    assert sample["target_times"] == [
+        "2025-01-02T06:00:00",
+        "2025-01-02T12:00:00",
+        "2025-01-05T00:00:00",
+    ]
+    expected_plus_1 = (
+        wind["u10"]
+        .sel(time=pd.Timestamp("2025-01-02T01:00"))
+        .isel(latitude=slice(None, None, 2), longitude=slice(None, None, 2))
+        .values
+    )
+    expected_plus_6 = (
+        wind["u10"]
+        .sel(time=pd.Timestamp("2025-01-02T06:00"))
+        .isel(latitude=slice(None, None, 2), longitude=slice(None, None, 2))
+        .values
+    )
+    np.testing.assert_allclose(sample["future_wind"][0, 0].numpy(), expected_plus_1)
+    np.testing.assert_allclose(sample["future_wind"][5, 0].numpy(), expected_plus_6)
+
+
+def test_fast_in_memory_dataset_matches_standard_dataset():
+    wind, wave = make_synthetic_pair()
+    stats = NormalizationStats(
+        input_mean=np.array([10.0, 11.0], dtype=np.float32),
+        input_std=np.array([2.0, 3.0], dtype=np.float32),
+        target_mean=np.array([12.0, 13.0, 0.5, 0.5], dtype=np.float32),
+        target_std=np.array([4.0, 5.0, 2.0, 2.0], dtype=np.float32),
+        input_names=("u10", "v10"),
+        target_names=("swh", "mwp", "cos_mwd", "sin_mwd"),
+    )
+    kwargs = {
+        "initialization_times": [pd.Timestamp("2025-01-02T00:00"), pd.Timestamp("2025-01-02T01:00")],
+        "stats": stats,
+        "history_hours": 4,
+        "lead_hours": (1, 2, 6),
+        "spatial_stride": 2,
+        "input_region": Region(south=5.0, north=45.0, west=95.0, east=150.0),
+        "output_region": Region(south=15.0, north=40.0, west=105.0, east=135.0),
+    }
+    standard = WindWaveSeq2SeqDataset(wind, wave, **kwargs)
+    fast = FastInMemoryWindWaveDataset(wind, wave, **kwargs)
+
+    for index in range(len(standard)):
+        standard_sample = standard[index]
+        fast_sample = fast[index]
+        for key in ("inputs", "future_wind", "targets", "wave0", "persistence"):
+            np.testing.assert_allclose(fast_sample[key].numpy(), standard_sample[key].numpy())
+        assert fast_sample["t0"] == standard_sample["t0"]
+        assert fast_sample["input_times"] == standard_sample["input_times"]
+        assert fast_sample["target_times"] == standard_sample["target_times"]
+
+
+def test_fast_in_memory_dataset_matches_standard_continuous_future_wind():
+    wind, wave = make_synthetic_pair()
+    stats = NormalizationStats.identity(
+        input_names=("u10", "v10"),
+        target_names=("swh", "mwp", "cos_mwd", "sin_mwd"),
+    )
+    kwargs = {
+        "initialization_times": [pd.Timestamp("2025-01-02T00:00")],
+        "stats": stats,
+        "history_hours": 4,
+        "lead_hours": (6, 12, 72),
+        "spatial_stride": 2,
+        "future_wind_mode": "continuous72",
+    }
+    standard = WindWaveSeq2SeqDataset(wind, wave, **kwargs)
+    fast = FastInMemoryWindWaveDataset(wind, wave, **kwargs)
+
+    standard_sample = standard[0]
+    fast_sample = fast[0]
+
+    np.testing.assert_allclose(fast_sample["future_wind"].numpy(), standard_sample["future_wind"].numpy())
+    assert fast_sample["future_wind_offsets"].tolist() == [5, 11, 71]
+
+
+def test_fast_in_memory_dataset_reuses_precomputed_cache():
+    wind, wave = make_synthetic_pair()
+    stats = NormalizationStats.identity(
+        input_names=("u10", "v10"),
+        target_names=("swh", "mwp", "cos_mwd", "sin_mwd"),
+    )
+    cache = FastInMemoryWindWaveCache.from_datasets(
+        wind,
+        wave,
+        stats=stats,
+        spatial_stride=2,
+        crop_size=None,
+        input_region=Region(south=5.0, north=45.0, west=95.0, east=150.0),
+        output_region=Region(south=15.0, north=40.0, west=105.0, east=135.0),
+    )
+
+    first = FastInMemoryWindWaveDataset(
+        wind,
+        wave,
+        initialization_times=[pd.Timestamp("2025-01-02T00:00")],
+        stats=stats,
+        history_hours=4,
+        lead_hours=(1, 2, 6),
+        cache=cache,
+    )
+    second = FastInMemoryWindWaveDataset(
+        wind,
+        wave,
+        initialization_times=[pd.Timestamp("2025-01-02T01:00")],
+        stats=stats,
+        history_hours=4,
+        lead_hours=(1, 2, 6),
+        cache=cache,
+    )
+
+    assert first.wind_array is second.wind_array
+    assert first.wave_array is second.wave_array
 
 
 def test_compute_normalization_stats_rejects_all_nan_values():
