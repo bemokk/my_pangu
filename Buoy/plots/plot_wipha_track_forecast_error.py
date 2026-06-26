@@ -37,7 +37,7 @@ BASE_FONT_SIZES = {
     "tick": 14,
     "annotation": 9,
 }
-FONT_FAMILY = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
+FONT_FAMILY = ["Times New Roman", "SimSun", "SimHei", "Microsoft YaHei", "DejaVu Serif"]
 TEXT_LABELS = {
     "real_track": "观测路径",
     "gdas_forecast": "GDAS实时预报",
@@ -149,15 +149,22 @@ def plot_track_error(tracks: pd.DataFrame, errors: pd.DataFrame) -> None:
     set_plot_style()
     plt.rcParams.update(
         {
-            "font.family": "sans-serif",
-            "font.sans-serif": FONT_FAMILY,
+            "font.family": FONT_FAMILY,
+            "font.serif": FONT_FAMILY,
+            "font.sans-serif": ["SimHei", "SimSun", "DejaVu Sans"],
+            "mathtext.fontset": "stix",
             "font.size": FONT_SIZES["default"],
             "axes.titlesize": FONT_SIZES["title"],
             "axes.labelsize": FONT_SIZES["axis_label"],
             "legend.fontsize": FONT_SIZES["legend"],
             "xtick.labelsize": FONT_SIZES["tick"],
             "ytick.labelsize": FONT_SIZES["tick"],
+            "axes.linewidth": 1.0,
             "axes.unicode_minus": False,
+            "figure.facecolor": "white",
+            "axes.facecolor": "white",
+            "savefig.dpi": 300,
+            "savefig.facecolor": "white",
         }
     )
     projection = ccrs.PlateCarree()
@@ -169,6 +176,10 @@ def plot_track_error(tracks: pd.DataFrame, errors: pd.DataFrame) -> None:
     ax_map.set_title(TEXT_LABELS["track_panel"], loc="left", fontweight="bold")
     ax_map.set_extent([MAP_AREA[0], MAP_AREA[1], MAP_AREA[2], MAP_AREA[3]], crs=projection)
     ax_map.set_facecolor("#EAF3F8")
+    for spine in ax_map.spines.values():
+        spine.set_visible(True)
+        spine.set_color("#333333")
+        spine.set_linewidth(1.0)
     land_union = load_land_union(MAP_AREA[0], MAP_AREA[2], MAP_AREA[1], MAP_AREA[3])
     ax_map.add_geometries(
         [land_union],
@@ -180,7 +191,7 @@ def plot_track_error(tracks: pd.DataFrame, errors: pd.DataFrame) -> None:
     )
     ax_map.add_feature(cfeature.COASTLINE.with_scale("10m"), linewidth=0.45, edgecolor="#333333", zorder=2)
     ax_map.add_feature(cfeature.BORDERS.with_scale("10m"), linewidth=0.25, edgecolor="#777777", zorder=2)
-    gl = ax_map.gridlines(crs=projection, draw_labels=True, linewidth=0.32, color="#777777", alpha=0.38, linestyle="--")
+    gl = ax_map.gridlines(crs=projection, draw_labels=True, linewidth=0.8, color="#BFBFBF", alpha=0.7, linestyle="--")
     gl.top_labels = False
     gl.right_labels = False
 
@@ -199,7 +210,7 @@ def plot_track_error(tracks: pd.DataFrame, errors: pd.DataFrame) -> None:
             color=style["color"],
             marker=style["marker"],
             linestyle=style["linestyle"],
-            linewidth=1.8,
+            linewidth=1.35,
             markersize=4.0,
             label=style["label"],
             transform=projection,
@@ -216,26 +227,37 @@ def plot_track_error(tracks: pd.DataFrame, errors: pd.DataFrame) -> None:
                     transform=projection,
                     zorder=6,
                 )
-    ax_map.legend(loc="lower left", frameon=True, facecolor="white", framealpha=0.9)
+    ax_map.legend(loc="upper left", frameon=True, facecolor="white", edgecolor="#CFCFCF", framealpha=0.82)
 
-    ax_err.set_facecolor("#F4F5F7")
-    ax_err.grid(True, color="white", linewidth=1.0)
-    ax_err.spines["top"].set_visible(False)
-    ax_err.spines["right"].set_visible(False)
+    ax_err.set_facecolor("white")
+    ax_err.grid(True, color="#BFBFBF", linewidth=0.8, linestyle="--", alpha=0.7)
+    ax_err.set_axisbelow(True)
+    for spine in ax_err.spines.values():
+        spine.set_visible(True)
+        spine.set_color("#333333")
+        spine.set_linewidth(1.0)
     ax_err.set_title(TEXT_LABELS["error_panel"], loc="left", fontweight="bold")
     for dataset in DATASETS:
         sub = errors[errors["scheme"] == dataset].sort_values("lead_hour")
         if sub.empty:
             continue
-        ax_err.plot(sub["lead_hour"], sub["track_error_km"], color=DATASET_COLORS[dataset], marker="o", linewidth=1.8, markersize=4.0, label=TEXT_LABELS[dataset])
+        ax_err.plot(
+            sub["lead_hour"],
+            sub["track_error_km"],
+            color=DATASET_COLORS[dataset],
+            marker=style_map[dataset]["marker"],
+            linewidth=1.35,
+            markersize=4.0,
+            label=TEXT_LABELS[dataset],
+        )
     ax_err.set_xlim(0, 72)
     ax_err.set_xticks([0, 12, 24, 36, 48, 60, 72])
     ax_err.set_xlabel(TEXT_LABELS["lead_time"])
     ax_err.set_ylabel(TEXT_LABELS["track_error"])
-    ax_err.legend(loc="upper left", frameon=True, facecolor="white", framealpha=0.9)
+    ax_err.legend(loc="upper left", frameon=True, facecolor="white", edgecolor="#CFCFCF", framealpha=0.82)
 
     fig.tight_layout(rect=[0.03, 0.03, 0.98, 0.98])
-    fig.savefig(OUT_TRACK_ERROR_PNG, bbox_inches="tight")
+    fig.savefig(OUT_TRACK_ERROR_PNG, dpi=300, bbox_inches="tight")
     fig.savefig(OUT_TRACK_ERROR_SVG, bbox_inches="tight")
     plt.close(fig)
 
