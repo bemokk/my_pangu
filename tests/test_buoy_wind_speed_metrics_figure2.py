@@ -55,7 +55,7 @@ def test_load_metrics_can_append_lead_zero_rows(monkeypatch, tmp_path):
     assert result["rmse"].tolist() == [1.0, 2.0]
 
 
-def test_plot_style_has_chinese_font_fallback_and_darker_lines():
+def test_plot_style_has_chinese_font_fallback_and_original_line_colors():
     speed_plot.set_plot_style()
 
     assert "Times New Roman" in speed_plot.FONT_FAMILY
@@ -63,7 +63,7 @@ def test_plot_style_has_chinese_font_fallback_and_darker_lines():
 
     colors = {dataset: style["color"] for dataset, style in speed_plot.DATASET_STYLES.items()}
     assert colors == {
-        "era5_realtime": "#9E2F33",
-        "era5_lagged_5d": "#244C8F",
-        "gdas_forecast": "#2F7D45",
+        "era5_realtime": "#C44E52",
+        "era5_lagged_5d": "#4C72B0",
+        "gdas_forecast": "#55A868",
     }

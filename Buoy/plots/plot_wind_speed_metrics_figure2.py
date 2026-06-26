@@ -42,19 +42,19 @@ X_TICKS = [0, 12, 24, 36, 48, 60, 72]
 DATASET_STYLES = {
     "era5_realtime": {
         "label": TEXT_LABELS["era5_realtime"],
-        "color": "#9E2F33",
+        "color": "#C44E52",
         "marker": "o",
         "linestyle": "-",
     },
     "era5_lagged_5d": {
         "label": TEXT_LABELS["era5_lagged_5d"],
-        "color": "#244C8F",
+        "color": "#4C72B0",
         "marker": "s",
         "linestyle": "-",
     },
     "gdas_forecast": {
         "label": TEXT_LABELS["gdas_forecast"],
-        "color": "#2F7D45",
+        "color": "#55A868",
         "marker": "^",
         "linestyle": "-",
     },
