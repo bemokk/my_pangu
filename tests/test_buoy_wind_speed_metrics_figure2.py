@@ -53,3 +53,17 @@ def test_load_metrics_can_append_lead_zero_rows(monkeypatch, tmp_path):
 
     assert result["lead_hour"].tolist() == [0, 3]
     assert result["rmse"].tolist() == [1.0, 2.0]
+
+
+def test_plot_style_has_chinese_font_fallback_and_darker_lines():
+    speed_plot.set_plot_style()
+
+    assert "Times New Roman" in speed_plot.FONT_FAMILY
+    assert {"SimSun", "SimHei", "Microsoft YaHei"}.issubset(speed_plot.FONT_FAMILY)
+
+    colors = {dataset: style["color"] for dataset, style in speed_plot.DATASET_STYLES.items()}
+    assert colors == {
+        "era5_realtime": "#9E2F33",
+        "era5_lagged_5d": "#244C8F",
+        "gdas_forecast": "#2F7D45",
+    }
