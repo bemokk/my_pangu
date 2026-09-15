@@ -42,3 +42,9 @@ __pycache__/
 *.log
 *.tmp
 .cache/
+.pytest_cache/
+.pytest_*/
+.tmp/
+
+# local release archives (GitHub's regular Git file limit is 100 MB)
+release/*.zip

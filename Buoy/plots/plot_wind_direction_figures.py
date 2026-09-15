@@ -18,9 +18,10 @@ from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 FONT_SCALE = 1.0
 FONT_FAMILY = ["Times New Roman", "SimSun", "SimHei", "Microsoft YaHei", "DejaVu Serif"]
 TEXT_LABELS = {
-    "era5_realtime": "ERA5实时场",
-    "era5_lagged_5d": "ERA5延迟5天预报",
-    "gdas_forecast": "GDAS实时预报",
+    # Experiment legend labels can be adjusted manually here.
+    "era5_realtime": "ERA5",
+    "era5_lagged_5d": "ERA5_Lagged",
+    "gdas_forecast": "GDAS_RealTime",
     "observed": "观测",
     "lead_time": "预报时效（h）",
     "rmse": "RMSE (degree)",
@@ -44,11 +45,15 @@ OUT_METRICS_PNG = FIGURES_DIR / "wind_direction_metrics_figure8_style.png"
 OUT_METRICS_SVG = FIGURES_DIR / "wind_direction_metrics_figure8_style.svg"
 OUT_FREQUENCY_PNG = FIGURES_DIR / "wind_direction_frequency_radar_24_48_72h.png"
 OUT_FREQUENCY_SVG = FIGURES_DIR / "wind_direction_frequency_radar_24_48_72h.svg"
+OUT_METRICS_DATA_CSV = FIGURES_DIR / "wind_direction_metrics_figure8_style_plot_data.csv"
+OUT_FREQUENCY_DATA_CSV = FIGURES_DIR / "wind_direction_frequency_radar_24_48_72h_plot_data.csv"
+METRICS_FIGURE_SIZE = (5.4, 7.6)  # Width reduced by 25%; adjust manually if needed.
+FREQUENCY_TITLE_FONT_SCALE = 1.2
 
 METRICS_LEAD_HOURS = list(range(0, 73, 3))
 FREQUENCY_LEAD_HOURS = [24, 48, 72]
 X_TICKS = [0, 12, 24, 36, 48, 60, 72]
-FREQUENCY_LEGEND_BBOX = (-0.6, 1.22)
+FREQUENCY_LEGEND_BBOX = (0.34, 1.02)
 SHOW_FREQUENCY_RADIAL_TICK_LABELS = False
 
 DIRECTION_SECTORS = [
@@ -74,19 +79,19 @@ SECTOR_TO_CODE = {sector: index for index, sector in enumerate(DIRECTION_SECTORS
 DATASET_STYLES = {
     "era5_realtime": {
         "label": TEXT_LABELS["era5_realtime"],
-        "color": "#C44E52",
+        "color": "#43A3EF",
         "marker": "o",
         "linestyle": "-",
     },
     "era5_lagged_5d": {
         "label": TEXT_LABELS["era5_lagged_5d"],
-        "color": "#4C72B0",
+        "color": "#FEA040",
         "marker": "s",
         "linestyle": "-",
     },
     "gdas_forecast": {
         "label": TEXT_LABELS["gdas_forecast"],
-        "color": "#55A868",
+        "color": "#EF767B",
         "marker": "^",
         "linestyle": "-",
     },
@@ -95,7 +100,7 @@ DATASET_ORDER = tuple(DATASET_STYLES)
 
 OBS_STYLE = {
     "label": TEXT_LABELS["observed"],
-    "color": "#CC79A7",
+    "color": "#63BA45",
     "marker": "D",
     "linestyle": "-",
 }
@@ -228,7 +233,7 @@ def make_direction_metrics_figure(df: pd.DataFrame) -> None:
     set_plot_style()
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplots(2, 1, figsize=(7.2, 7.6), constrained_layout=False)
+    fig, axes = plt.subplots(2, 1, figsize=METRICS_FIGURE_SIZE, constrained_layout=False)
     plot_direction_metric(axes[0], df, "rmse", "(a) RMSE", TEXT_LABELS["rmse"])
     plot_direction_metric(axes[1], df, "mae", "(b) MAE", TEXT_LABELS["mae"])
 
@@ -251,6 +256,48 @@ def make_direction_metrics_figure(df: pd.DataFrame) -> None:
     fig.savefig(OUT_METRICS_PNG, bbox_inches="tight")
     fig.savefig(OUT_METRICS_SVG, bbox_inches="tight")
     plt.close(fig)
+
+
+def build_direction_metrics_plot_data(df: pd.DataFrame) -> pd.DataFrame:
+    metric_info = {
+        "rmse": {"panel_title": "(a) RMSE", "ylabel": TEXT_LABELS["rmse"]},
+        "mae": {"panel_title": "(b) MAE", "ylabel": TEXT_LABELS["mae"]},
+    }
+    frames = []
+    dataset_labels = {dataset: style["label"] for dataset, style in DATASET_STYLES.items()}
+    for metric, info in metric_info.items():
+        metric_df = df[["dataset", "lead_hour", metric]].copy()
+        metric_df["dataset_label"] = metric_df["dataset"].map(dataset_labels)
+        metric_df["metric"] = metric
+        metric_df["panel_title"] = info["panel_title"]
+        metric_df["ylabel"] = info["ylabel"]
+        metric_df = metric_df.rename(columns={metric: "value"})
+        frames.append(
+            metric_df[
+                [
+                    "panel_title",
+                    "metric",
+                    "ylabel",
+                    "dataset",
+                    "dataset_label",
+                    "lead_hour",
+                    "value",
+                ]
+            ]
+        )
+
+    return pd.concat(frames, ignore_index=True).sort_values(
+        ["metric", "dataset", "lead_hour"]
+    )
+
+
+def save_direction_metrics_plot_data(df: pd.DataFrame) -> None:
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    build_direction_metrics_plot_data(df).to_csv(
+        OUT_METRICS_DATA_CSV,
+        index=False,
+        encoding="utf-8-sig",
+    )
 
 
 def closed_values(values: pd.Series | np.ndarray) -> np.ndarray:
@@ -353,14 +400,16 @@ def make_direction_frequency_figure(df: pd.DataFrame) -> None:
             TEXT_LABELS["lead_panel"].format(panel=panel_letter, lead_hour=lead_hour),
             y=1.1,
             fontweight="bold",
+            fontsize=FONT_SIZES["title"] * FREQUENCY_TITLE_FONT_SCALE,
         )
 
     handles, labels = axes[0].get_legend_handles_labels()
-    axes[0].legend(
+    fig.legend(
         handles,
         labels,
-        loc="upper left",
+        loc="upper center",
         bbox_to_anchor=FREQUENCY_LEGEND_BBOX,
+        ncol=1,
         frameon=True,
         facecolor="white",
         edgecolor="#CFCFCF",
@@ -373,9 +422,57 @@ def make_direction_frequency_figure(df: pd.DataFrame) -> None:
     plt.close(fig)
 
 
+def build_direction_frequency_plot_data(df: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for lead_hour in FREQUENCY_LEAD_HOURS:
+        obs = observation_frequency(df, lead_hour)
+        for sector_code, direction_sector in enumerate(DIRECTION_SECTORS):
+            rows.append(
+                {
+                    "lead_hour": lead_hour,
+                    "direction_sector": direction_sector,
+                    "sector_code": sector_code,
+                    "angle_deg": sector_code * 360.0 / len(DIRECTION_SECTORS),
+                    "series_type": "observed",
+                    "dataset": "observed",
+                    "dataset_label": OBS_STYLE["label"],
+                    "frequency": obs.loc[direction_sector],
+                }
+            )
+
+        for dataset, style in DATASET_STYLES.items():
+            pred = frequency_series_for_dataset(df, lead_hour, dataset, "pred_frequency")
+            for sector_code, direction_sector in enumerate(DIRECTION_SECTORS):
+                rows.append(
+                    {
+                        "lead_hour": lead_hour,
+                        "direction_sector": direction_sector,
+                        "sector_code": sector_code,
+                        "angle_deg": sector_code * 360.0 / len(DIRECTION_SECTORS),
+                        "series_type": "forecast",
+                        "dataset": dataset,
+                        "dataset_label": style["label"],
+                        "frequency": pred.loc[direction_sector],
+                    }
+                )
+
+    return pd.DataFrame(rows).sort_values(["lead_hour", "series_type", "dataset", "sector_code"])
+
+
+def save_direction_frequency_plot_data(df: pd.DataFrame) -> None:
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    build_direction_frequency_plot_data(df).to_csv(
+        OUT_FREQUENCY_DATA_CSV,
+        index=False,
+        encoding="utf-8-sig",
+    )
+
+
 def main() -> None:
     metrics = load_direction_metrics(include_lead_zero=True)
     frequency = load_direction_frequency()
+    save_direction_metrics_plot_data(metrics)
+    save_direction_frequency_plot_data(frequency)
     make_direction_metrics_figure(metrics)
     make_direction_frequency_figure(frequency)
 
@@ -383,6 +480,8 @@ def main() -> None:
     print(f"Frequency input: {DIRECTION_FREQUENCY_CSV}")
     print(f"Metrics leads: {METRICS_LEAD_HOURS}")
     print(f"Frequency leads: {FREQUENCY_LEAD_HOURS}")
+    print(f"Metrics plot data CSV: {OUT_METRICS_DATA_CSV}")
+    print(f"Frequency plot data CSV: {OUT_FREQUENCY_DATA_CSV}")
     print(f"Metrics PNG: {OUT_METRICS_PNG}")
     print(f"Metrics SVG: {OUT_METRICS_SVG}")
     print(f"Frequency PNG: {OUT_FREQUENCY_PNG}")

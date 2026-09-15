@@ -1,0 +1,4 @@
+lead_hour,GDAS_speed_bias,GDAS_speed_rmse,GDAS_dir_mae_deg,ERA5Lagged_speed_bias,ERA5Lagged_speed_rmse,ERA5Lagged_dir_mae_deg,better_speed,better_direction
+24,0.375056,1.826055,14.093857,0.868855,2.730971,23.245331,GDAS_Realtime,GDAS_Realtime
+48,-0.623415,2.300334,20.857223,0.348166,3.095665,45.865272,GDAS_Realtime,GDAS_Realtime
+72,1.066595,2.723636,26.908045,2.880676,4.553611,49.504289,GDAS_Realtime,GDAS_Realtime

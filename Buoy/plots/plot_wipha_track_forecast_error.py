@@ -27,6 +27,15 @@ from plots.wipha_case_common import (
     set_plot_style,
 )
 
+# Keep this figure's experiment colors consistent with the wind verification figures.
+DATASET_COLORS = dict(DATASET_COLORS)
+DATASET_COLORS.update(
+    {
+        "gdas_forecast": "#EF767B",
+        "era5_lagged_5d": "#FEA040",
+    }
+)
+
 
 FONT_SCALE = 1
 BASE_FONT_SIZES = {
@@ -184,7 +193,7 @@ def plot_track_error(tracks: pd.DataFrame, errors: pd.DataFrame) -> None:
     ax_map.add_geometries(
         [land_union],
         crs=projection,
-        facecolor="#D7D2C3",
+        facecolor="#F1EEDB",
         edgecolor="#777777",
         linewidth=0.35,
         zorder=1,

@@ -17,9 +17,10 @@ from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 FONT_SCALE = 1
 FONT_FAMILY = ["Times New Roman", "SimSun", "SimHei", "Microsoft YaHei", "DejaVu Serif"]
 TEXT_LABELS = {
-    "era5_realtime": "ERA5实时场",
-    "era5_lagged_5d": "ERA5延迟5天预报",
-    "gdas_forecast": "GDAS实时预报",
+    # Experiment legend labels can be adjusted manually here.
+    "era5_realtime": "ERA5",
+    "era5_lagged_5d": "ERA5_Lagged",
+    "gdas_forecast": "GDAS_RealTime",
     "lead_time": "预报时效（h）",
     "correlation": "相关系数",
 }
@@ -35,6 +36,8 @@ FONT_SIZES = {name: size * FONT_SCALE for name, size in BASE_FONT_SIZES.items()}
 METRICS_CSV = WIND_MODEL_STATISTICS_DIR / "wind_model_statistics_3_72h" / "wind_speed_metrics_by_lead.csv"
 OUT_PNG = FIGURES_DIR / "wind_speed_metrics_figure2_style.png"
 OUT_SVG = FIGURES_DIR / "wind_speed_metrics_figure2_style.svg"
+OUT_DATA_CSV = FIGURES_DIR / "wind_speed_metrics_figure2_style_plot_data.csv"
+FIGURE_SIZE = (5.4, 10.6)  # Width reduced by 25%; adjust manually if needed.
 
 LEAD_HOURS = list(range(0, 73, 3))
 X_TICKS = [0, 12, 24, 36, 48, 60, 72]
@@ -42,19 +45,19 @@ X_TICKS = [0, 12, 24, 36, 48, 60, 72]
 DATASET_STYLES = {
     "era5_realtime": {
         "label": TEXT_LABELS["era5_realtime"],
-        "color": "#C44E52",
+        "color": "#43A3EF",
         "marker": "o",
         "linestyle": "-",
     },
     "era5_lagged_5d": {
         "label": TEXT_LABELS["era5_lagged_5d"],
-        "color": "#4C72B0",
+        "color": "#FEA040",
         "marker": "s",
         "linestyle": "-",
     },
     "gdas_forecast": {
         "label": TEXT_LABELS["gdas_forecast"],
-        "color": "#55A868",
+        "color": "#EF767B",
         "marker": "^",
         "linestyle": "-",
     },
@@ -154,11 +157,46 @@ def plot_metric(ax, df: pd.DataFrame, metric: str, title: str, ylabel: str) -> N
         ax.set_ylim(*Y_LIMITS[metric])
 
 
+def build_plot_data(df: pd.DataFrame) -> pd.DataFrame:
+    frames = []
+    for metric, title, ylabel in PLOT_METRICS:
+        metric_df = df[["dataset", "lead_hour", metric]].copy()
+        metric_df["dataset_label"] = metric_df["dataset"].map(
+            {dataset: style["label"] for dataset, style in DATASET_STYLES.items()}
+        )
+        metric_df["metric"] = metric
+        metric_df["panel_title"] = title
+        metric_df["ylabel"] = ylabel
+        metric_df = metric_df.rename(columns={metric: "value"})
+        frames.append(
+            metric_df[
+                [
+                    "panel_title",
+                    "metric",
+                    "ylabel",
+                    "dataset",
+                    "dataset_label",
+                    "lead_hour",
+                    "value",
+                ]
+            ]
+        )
+
+    return pd.concat(frames, ignore_index=True).sort_values(
+        ["metric", "dataset", "lead_hour"]
+    )
+
+
+def save_plot_data(df: pd.DataFrame) -> None:
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    build_plot_data(df).to_csv(OUT_DATA_CSV, index=False, encoding="utf-8-sig")
+
+
 def make_figure(df: pd.DataFrame) -> None:
     set_plot_style()
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplots(3, 1, figsize=(7.2, 10.6), constrained_layout=False)
+    fig, axes = plt.subplots(3, 1, figsize=FIGURE_SIZE, constrained_layout=False)
     for ax, (metric, title, ylabel) in zip(axes, PLOT_METRICS):
         plot_metric(ax, df, metric, title, ylabel)
 
@@ -182,8 +220,10 @@ def make_figure(df: pd.DataFrame) -> None:
 
 def main() -> None:
     df = load_metrics(METRICS_CSV, include_lead_zero=True)
+    save_plot_data(df)
     make_figure(df)
     print(f"Input: {METRICS_CSV}")
+    print(f"Plot data CSV: {OUT_DATA_CSV}")
     print(f"PNG: {OUT_PNG}")
     print(f"SVG: {OUT_SVG}")
 

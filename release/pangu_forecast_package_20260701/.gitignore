@@ -1,0 +1,8 @@
+*.grib2
+*.grib2.part
+*.nc
+*.npy
+*.onnx
+*.pyc
+__pycache__/
+timeline_cache/

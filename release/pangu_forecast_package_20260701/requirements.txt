@@ -1,0 +1,10 @@
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+cdsapi==0.7.7
+netCDF4==1.7.4
+numpy==2.2.6
+onnxruntime-gpu==1.23.2
+pygrib==2.1.8
+requests==2.33.1
+torch==2.10.0+cu128
+tqdm==4.67.3

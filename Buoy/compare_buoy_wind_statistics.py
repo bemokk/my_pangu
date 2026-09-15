@@ -106,10 +106,7 @@ def find_var_name(ds: xr.Dataset, candidates: list[str]) -> str:
 
 
 def open_dataset(path: Path) -> xr.Dataset:
-    engines = xr.backends.plugins.list_engines()
-    if "netcdf4" in engines:
-        return xr.open_dataset(path, engine="netcdf4", decode_times=True)
-    return xr.open_dataset(path, decode_times=True)
+    return xr.open_dataset(path, engine="netcdf4", decode_times=True)
 
 
 def normalize_lon_lat(ds: xr.Dataset) -> xr.Dataset:

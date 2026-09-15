@@ -24,6 +24,7 @@ FONT_FAMILY = ["Times New Roman", "SimSun", "SimHei", "Microsoft YaHei", "DejaVu
 TEXT_LABELS = {
     "colorbar": "每个六边形网格的记录数",
 }
+COLORBAR_LABEL_FONT_SCALE = 1.5
 BASE_FONT_SIZES = {
     "default": 12,
     "axis_label": 28,
@@ -197,7 +198,14 @@ def plot_hex_counts(hexes: pd.DataFrame, land_union, ocean_area, records: pd.Dat
         norm = mcolors.Normalize(vmin=0, vmax=1)
     else:
         norm = mcolors.LogNorm(vmin=max(1, int(nonzero.min())), vmax=int(nonzero.max()))
-    cmap = plt.get_cmap("turbo")
+    colors = [
+        "#FFFFFF",
+        "#F7F0B5",
+        "#FCD3A0",
+        "#F6A888",
+        "#F0877E",
+    ]
+    cmap = mcolors.LinearSegmentedColormap.from_list("hex_count_colors", colors)
 
     for _, row in hexes.iterrows():
         count = int(row["record_count"])
@@ -218,7 +226,7 @@ def plot_hex_counts(hexes: pd.DataFrame, land_union, ocean_area, records: pd.Dat
     ax.add_geometries(
         [land_union],
         crs=projection,
-        facecolor="#b8b8a6",
+        facecolor="#F1EEDB",
         edgecolor="#555555",
         linewidth=0.4,
         zorder=3,
@@ -265,7 +273,10 @@ def plot_hex_counts(hexes: pd.DataFrame, land_union, ocean_area, records: pd.Dat
         sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
         sm.set_array([])
         cbar = fig.colorbar(sm, ax=ax, orientation="vertical", shrink=0.62, pad=0.02)
-        cbar.set_label(TEXT_LABELS["colorbar"], fontsize=FONT_SIZES["default"])
+        cbar.set_label(
+            TEXT_LABELS["colorbar"],
+            fontsize=FONT_SIZES["default"] * COLORBAR_LABEL_FONT_SCALE,
+        )
         cbar.ax.tick_params(labelsize=FONT_SIZES["tick"])
 
     fig.savefig(HEX_COUNTS_PNG, dpi=260, bbox_inches="tight")

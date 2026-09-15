@@ -17,10 +17,10 @@ from paths import FIGURES_DIR, WIND_MODEL_STATISTICS_DIR
 FONT_SCALE = 1.0
 FONT_FAMILY = ["Times New Roman", "SimSun", "SimHei", "Microsoft YaHei", "DejaVu Serif"]
 TEXT_LABELS = {
-    "era5_lagged_5d": "ERA5延迟5天预报",
-    "era5_lagged_5d_short": "ERA5延迟5天",
-    "gdas_forecast": "GDAS实时预报",
-    "gdas_forecast_short": "GDAS",
+    "era5_lagged_5d": "ERA5_Lagged",
+    "era5_lagged_5d_short": "ERA5_Lagged",
+    "gdas_forecast": "GDAS_RealTime",
+    "gdas_forecast_short": "GDAS_RealTime",
     "insufficient_data": "匹配样本不足阈值",
     "no_matched_sample": "无匹配样本",
     "no_eligible_hexagons": "没有六边形满足样本阈值",
@@ -53,12 +53,12 @@ DATASET_STYLES = {
     "era5_lagged_5d": {
         "label": TEXT_LABELS["era5_lagged_5d"],
         "short_label": TEXT_LABELS["era5_lagged_5d_short"],
-        "color": "#4C72B0",
+        "color": "#FEA040",
     },
     "gdas_forecast": {
         "label": TEXT_LABELS["gdas_forecast"],
         "short_label": TEXT_LABELS["gdas_forecast_short"],
-        "color": "#55A868",
+        "color": "#EF767B",
     },
 }
 DATASET_ORDER = tuple(DATASET_STYLES)
@@ -415,7 +415,7 @@ def plot_best_rmse_hexes(
         ax.add_geometries(
             [land_union],
             crs=projection,
-            facecolor="#B8B8A6",
+            facecolor="#F1EEDB",
             edgecolor="#555555",
             linewidth=0.35,
             zorder=3,
