@@ -32,10 +32,13 @@ def chronological_split(
     times: Iterable[pd.Timestamp],
     train_fraction: float = 0.7,
     val_fraction: float = 0.15,
+    embargo_hours: int = 0,
 ) -> tuple[list[pd.Timestamp], list[pd.Timestamp], list[pd.Timestamp]]:
     ordered = sorted(_to_timestamp_list(times))
     if len(ordered) < 3:
         raise ValueError("Need at least three times for train, validation, and test splits")
+    if embargo_hours < 0:
+        raise ValueError("embargo_hours must be non-negative")
 
     train_end = max(1, min(len(ordered) - 2, int(len(ordered) * train_fraction)))
     val_end = max(
@@ -47,7 +50,16 @@ def chronological_split(
     val = ordered[train_end:val_end]
     test = ordered[val_end:]
 
+    if embargo_hours > 0:
+        minimum_gap = pd.Timedelta(hours=int(embargo_hours))
+        val = [value for value in val if value - train[-1] >= minimum_gap]
+        if val:
+            test = [value for value in test if value - val[-1] >= minimum_gap]
+
     if not train or not val or not test:
-        raise ValueError("Chronological split produced an empty train, validation, or test split")
+        raise ValueError(
+            "Chronological split produced an empty train, validation, or test split "
+            f"after applying embargo_hours={embargo_hours}"
+        )
 
     return train, val, test

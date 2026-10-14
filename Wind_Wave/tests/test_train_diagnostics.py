@@ -59,6 +59,52 @@ def test_evaluate_persistence_loader_keeps_rows_when_direction_is_all_nan():
     assert np.isnan(rows[0]["mae_mwd_degrees"])
 
 
+def test_evaluate_persistence_loader_aggregates_global_rmse_across_uneven_batches():
+    stats = NormalizationStats.identity(
+        input_names=("u10", "v10"),
+        target_names=("swh", "mwp", "cos_mwd", "sin_mwd"),
+    )
+    first_prediction = torch.zeros(2, 1, 4, 1, 1)
+    first_target = first_prediction.clone()
+    second_prediction = torch.zeros(1, 1, 4, 1, 1)
+    second_target = second_prediction.clone()
+    second_target[:, :, 0] = 3.0
+    loader = [
+        {"persistence": first_prediction, "targets": first_target},
+        {"persistence": second_prediction, "targets": second_target},
+    ]
+
+    _, rows = _evaluate_persistence_loader(
+        loader,
+        stats,
+        torch.device("cpu"),
+        lead_hours=(6,),
+    )
+
+    assert np.isclose(rows[0]["rmse_swh"], np.sqrt(3.0))
+    assert rows[0]["valid_swh"] == 3
+
+
+def test_evaluate_persistence_loader_ignores_nonfinite_prediction_pairs():
+    stats = NormalizationStats.identity(
+        input_names=("u10", "v10"),
+        target_names=("swh", "mwp", "cos_mwd", "sin_mwd"),
+    )
+    persistence = torch.tensor([[[[[float("nan")]], [[4.0]], [[1.0]], [[0.0]]]]])
+    targets = torch.tensor([[[[[2.0]], [[6.0]], [[0.0]], [[1.0]]]]])
+
+    loss, rows = _evaluate_persistence_loader(
+        [{"persistence": persistence, "targets": targets}],
+        stats,
+        torch.device("cpu"),
+        lead_hours=(6,),
+    )
+
+    assert np.isfinite(loss)
+    assert np.isnan(rows[0]["rmse_swh"])
+    assert rows[0]["valid_swh"] == 0
+
+
 def test_plot_training_curve_writes_nonempty_png(tmp_path):
     path = tmp_path / "training_curve.png"
 

@@ -4,6 +4,7 @@ import argparse
 import copy
 import csv
 import json
+import random
 import time
 from collections.abc import Sequence
 from contextlib import nullcontext
@@ -44,13 +45,59 @@ from .era5 import (
 )
 from .extract import ExtractedPair, extract_archives
 from .indexing import build_valid_initialization_times, chronological_split
-from .losses import masked_mse_loss
-from .metrics import circular_mae_degrees, rmse
+from .losses import (
+    LOSS_MODES,
+    circular_cosine_sum_and_count,
+    masked_mse_sum_and_count,
+    wind_wave_loss,
+)
+from .metrics import (
+    circular_absolute_error_sum_and_count,
+    squared_error_sum_and_count,
+)
 from .model import ConvLSTMWindWaveModel
 from .model import WindWaveV2Model
 
 
-MODEL_VARIANTS = ("m1", "m2-direct", "m2-wave0-direct", "m2-wave0-residual")
+MODEL_VARIANTS = (
+    "m1",
+    "m2-direct",
+    "m2-wave0-direct",
+    "m2-wave0-direct-unitdir",
+    "m2-wave0-residual",
+)
+CHECKPOINT_VERSION = 2
+RESUME_CONFIG_FIELDS = (
+    "data_source",
+    "year",
+    "years",
+    "converted_dir",
+    "zarr_dir",
+    "metadata_dir",
+    "batch_size",
+    "learning_rate",
+    "weight_decay",
+    "dropout",
+    "precision",
+    "history_hours",
+    "lead_hours",
+    "hidden_channels",
+    "max_samples",
+    "max_archives",
+    "spatial_stride",
+    "crop_size",
+    "input_region",
+    "output_region",
+    "model_variant",
+    "future_wind_mode",
+    "split_embargo_hours",
+    "loss_mode",
+    "direction_loss_weight",
+    "preload_spatial",
+    "fast_in_memory_dataset",
+    "num_workers",
+    "seed",
+)
 
 
 def parse_lead_hours(value: str) -> tuple[int, ...]:
@@ -89,6 +136,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-region", default=DEFAULT_OUTPUT_REGION)
     parser.add_argument("--model-variant", default="m1", choices=MODEL_VARIANTS)
     parser.add_argument("--future-wind-mode", default="target", choices=("target", "continuous72"))
+    parser.add_argument("--split-embargo-hours", type=int, default=0)
+    parser.add_argument("--loss-mode", default="mse", choices=LOSS_MODES)
+    parser.add_argument("--direction-loss-weight", type=float, default=1.0)
     parser.add_argument("--run-name", default=None)
     parser.add_argument("--preload-spatial", action="store_true")
     parser.add_argument("--num-workers", type=int, default=0)
@@ -99,6 +149,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-every", type=int, default=0)
     parser.add_argument("--fast-in-memory-dataset", action="store_true")
     parser.add_argument("--epoch-pause-seconds", type=float, default=0.0)
+    parser.add_argument("--seed", type=int, default=1337)
+    parser.add_argument("--resume-checkpoint", type=Path, default=None)
+    parser.add_argument("--checkpoint-every-steps", type=int, default=0)
+    parser.add_argument("--step-pause-every", type=int, default=0)
+    parser.add_argument("--step-pause-seconds", type=float, default=0.0)
     parser.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
     return parser
 
@@ -327,6 +382,7 @@ def _make_loader(
     lead_hours: tuple[int, ...],
     shuffle: bool,
     fast_cache: FastInMemoryWindWaveCache | None = None,
+    generator: torch.Generator | None = None,
 ) -> DataLoader:
     if args.fast_in_memory_dataset:
         dataset = FastInMemoryWindWaveDataset(
@@ -357,16 +413,22 @@ def _make_loader(
             output_region=parse_region(args.output_region),
             future_wind_mode=args.future_wind_mode,
         )
-    return DataLoader(dataset, **_build_loader_kwargs(args, shuffle=shuffle))
+    return DataLoader(dataset, **_build_loader_kwargs(args, shuffle=shuffle, generator=generator))
 
 
-def _build_loader_kwargs(args: argparse.Namespace, shuffle: bool) -> dict[str, object]:
+def _build_loader_kwargs(
+    args: argparse.Namespace,
+    shuffle: bool,
+    generator: torch.Generator | None = None,
+) -> dict[str, object]:
     kwargs: dict[str, object] = {
         "batch_size": args.batch_size,
         "shuffle": shuffle,
         "num_workers": args.num_workers,
         "pin_memory": args.pin_memory,
     }
+    if generator is not None:
+        kwargs["generator"] = generator
     if args.num_workers > 0:
         kwargs["persistent_workers"] = args.persistent_workers
         if args.prefetch_factor is not None:
@@ -378,12 +440,13 @@ def _split_times_for_training(
     args: argparse.Namespace,
     initialization_times: list[pd.Timestamp],
 ) -> tuple[list[pd.Timestamp], list[pd.Timestamp], list[pd.Timestamp]]:
-    if args.data_source == "zarr" and args.max_samples is None:
+    embargo_hours = int(getattr(args, "split_embargo_hours", 0))
+    if args.data_source == "zarr" and args.max_samples is None and embargo_hours == 0:
         try:
             return _load_zarr_split_times(args.metadata_dir)
         except FileNotFoundError:
             pass
-    return chronological_split(initialization_times)
+    return chronological_split(initialization_times, embargo_hours=embargo_hours)
 
 
 def _normalization_stats_for_training(
@@ -417,62 +480,146 @@ def _denormalize_targets(tensor: torch.Tensor, stats: NormalizationStats, device
     return tensor * std + mean
 
 
-def _empty_per_lead_metrics(lead_hours: tuple[int, ...]) -> dict[int, dict[str, list[float]]]:
-    return {lead: {"swh": [], "mwp": [], "mwd": []} for lead in lead_hours}
-
-
-def _metric_or_nan(metric_fn, *args: torch.Tensor) -> float:
-    try:
-        return float(metric_fn(*args).cpu())
-    except ValueError as exc:
-        if "finite" not in str(exc):
-            raise
-        return float("nan")
-
-
-def _nanmean_or_nan(values: list[float]) -> float:
-    array = np.asarray(values, dtype=np.float64)
-    if array.size == 0 or not np.isfinite(array).any():
-        return float("nan")
-    return float(np.nanmean(array))
+def _empty_per_lead_metrics(lead_hours: tuple[int, ...]) -> dict[int, dict[str, float | int]]:
+    return {
+        lead: {
+            "swh_squared_error_sum": 0.0,
+            "swh_count": 0,
+            "mwp_squared_error_sum": 0.0,
+            "mwp_count": 0,
+            "mwd_absolute_error_sum": 0.0,
+            "mwd_count": 0,
+        }
+        for lead in lead_hours
+    }
 
 
 def _append_per_lead_metrics(
-    per_lead: dict[int, dict[str, list[float]]],
+    per_lead: dict[int, dict[str, float | int]],
     predictions: torch.Tensor,
     targets: torch.Tensor,
     lead_hours: tuple[int, ...],
 ) -> None:
     for lead_index, lead in enumerate(lead_hours):
-        per_lead[lead]["swh"].append(
-            _metric_or_nan(rmse, predictions[:, lead_index, 0], targets[:, lead_index, 0])
+        values = per_lead[lead]
+        swh_sum, swh_count = squared_error_sum_and_count(
+            predictions[:, lead_index, 0], targets[:, lead_index, 0]
         )
-        per_lead[lead]["mwp"].append(
-            _metric_or_nan(rmse, predictions[:, lead_index, 1], targets[:, lead_index, 1])
+        mwp_sum, mwp_count = squared_error_sum_and_count(
+            predictions[:, lead_index, 1], targets[:, lead_index, 1]
         )
-        per_lead[lead]["mwd"].append(
-            _metric_or_nan(
-                circular_mae_degrees,
-                predictions[:, lead_index, 3],
-                predictions[:, lead_index, 2],
-                targets[:, lead_index, 3],
-                targets[:, lead_index, 2],
-            )
+        mwd_sum, mwd_count = circular_absolute_error_sum_and_count(
+            predictions[:, lead_index, 3],
+            predictions[:, lead_index, 2],
+            targets[:, lead_index, 3],
+            targets[:, lead_index, 2],
         )
+        values["swh_squared_error_sum"] += float(swh_sum.cpu())
+        values["swh_count"] += swh_count
+        values["mwp_squared_error_sum"] += float(mwp_sum.cpu())
+        values["mwp_count"] += mwp_count
+        values["mwd_absolute_error_sum"] += float(mwd_sum.cpu())
+        values["mwd_count"] += mwd_count
 
 
 def _finalize_per_lead_metrics(
-    per_lead: dict[int, dict[str, list[float]]],
+    per_lead: dict[int, dict[str, float | int]],
 ) -> list[dict[str, float | int]]:
-    return [
-        {
-            "lead_hour": lead,
-            "rmse_swh": _nanmean_or_nan(values["swh"]),
-            "rmse_mwp": _nanmean_or_nan(values["mwp"]),
-            "mae_mwd_degrees": _nanmean_or_nan(values["mwd"]),
-        }
-        for lead, values in per_lead.items()
-    ]
+    rows = []
+    for lead, values in per_lead.items():
+        swh_count = int(values["swh_count"])
+        mwp_count = int(values["mwp_count"])
+        mwd_count = int(values["mwd_count"])
+        rows.append(
+            {
+                "lead_hour": lead,
+                "rmse_swh": (
+                    float(np.sqrt(float(values["swh_squared_error_sum"]) / swh_count))
+                    if swh_count
+                    else float("nan")
+                ),
+                "rmse_mwp": (
+                    float(np.sqrt(float(values["mwp_squared_error_sum"]) / mwp_count))
+                    if mwp_count
+                    else float("nan")
+                ),
+                "mae_mwd_degrees": (
+                    float(values["mwd_absolute_error_sum"]) / mwd_count
+                    if mwd_count
+                    else float("nan")
+                ),
+                "valid_swh": swh_count,
+                "valid_mwp": mwp_count,
+                "valid_mwd": mwd_count,
+            }
+        )
+    return rows
+
+
+def _empty_loss_totals(loss_mode: str) -> dict[str, float | int | str]:
+    return {
+        "mode": loss_mode,
+        "scalar_sum": 0.0,
+        "scalar_count": 0,
+        "direction_sum": 0.0,
+        "direction_count": 0,
+    }
+
+
+def _append_loss_totals(
+    totals: dict[str, float | int | str],
+    predictions: torch.Tensor,
+    targets: torch.Tensor,
+    stats: NormalizationStats,
+    *,
+    require_finite_prediction: bool,
+) -> None:
+    mode = str(totals["mode"])
+    if mode == "mse":
+        value_sum, count = masked_mse_sum_and_count(
+            predictions.float(),
+            targets.float(),
+            require_finite_prediction=require_finite_prediction,
+        )
+        totals["scalar_sum"] += float(value_sum.cpu())
+        totals["scalar_count"] += count
+        return
+
+    scalar_sum, scalar_count = masked_mse_sum_and_count(
+        predictions[:, :, :2].float(),
+        targets[:, :, :2].float(),
+        require_finite_prediction=require_finite_prediction,
+    )
+    prediction_raw = _denormalize_targets(predictions.float(), stats, predictions.device)
+    target_raw = _denormalize_targets(targets.float(), stats, targets.device)
+    direction_sum, direction_count = circular_cosine_sum_and_count(
+        prediction_raw[:, :, 2],
+        prediction_raw[:, :, 3],
+        target_raw[:, :, 2],
+        target_raw[:, :, 3],
+        require_finite_prediction=require_finite_prediction,
+    )
+    totals["scalar_sum"] += float(scalar_sum.cpu())
+    totals["scalar_count"] += scalar_count
+    totals["direction_sum"] += float(direction_sum.cpu())
+    totals["direction_count"] += direction_count
+
+
+def _finalize_loss_totals(
+    totals: dict[str, float | int | str],
+    direction_loss_weight: float,
+) -> float:
+    scalar_count = int(totals["scalar_count"])
+    if scalar_count == 0:
+        return float("nan")
+    scalar_loss = float(totals["scalar_sum"]) / scalar_count
+    if totals["mode"] == "mse":
+        return scalar_loss
+    direction_count = int(totals["direction_count"])
+    if direction_count == 0:
+        return float("nan")
+    direction_loss = float(totals["direction_sum"]) / direction_count
+    return scalar_loss + float(direction_loss_weight) * direction_loss
 
 
 def _evaluate_loader(
@@ -484,9 +631,11 @@ def _evaluate_loader(
     model_variant: str = "m1",
     precision: str = "fp32",
     non_blocking: bool = False,
+    loss_mode: str = "mse",
+    direction_loss_weight: float = 1.0,
 ) -> tuple[float, list[dict[str, float | int]]]:
     model.eval()
-    losses = []
+    loss_totals = _empty_loss_totals(loss_mode)
     per_lead = _empty_per_lead_metrics(lead_hours)
     with torch.no_grad():
         for batch in loader:
@@ -494,14 +643,22 @@ def _evaluate_loader(
             targets = batch["targets"]
             with _autocast_context(precision, device):
                 predictions = _predict_batch(model, batch, device, model_variant)
-                loss = masked_mse_loss(predictions, targets)
-            losses.append(float(loss.detach().cpu()))
+            _append_loss_totals(
+                loss_totals,
+                predictions,
+                targets,
+                stats,
+                require_finite_prediction=False,
+            )
 
             pred_raw = _denormalize_targets(predictions.float(), stats, device)
             target_raw = _denormalize_targets(targets.float(), stats, device)
             _append_per_lead_metrics(per_lead, pred_raw, target_raw, lead_hours)
 
-    return float(np.mean(losses)), _finalize_per_lead_metrics(per_lead)
+    return (
+        _finalize_loss_totals(loss_totals, direction_loss_weight),
+        _finalize_per_lead_metrics(per_lead),
+    )
 
 
 def _build_model(
@@ -520,8 +677,10 @@ def _build_model(
         hidden_channels=args.hidden_channels,
         lead_count=lead_count,
         target_channels=4,
-        use_wave0=args.model_variant in {"m2-wave0-direct", "m2-wave0-residual"},
+        use_wave0=args.model_variant
+        in {"m2-wave0-direct", "m2-wave0-direct-unitdir", "m2-wave0-residual"},
         residual=args.model_variant == "m2-wave0-residual",
+        normalize_direction_output=args.model_variant == "m2-wave0-direct-unitdir",
         dropout=args.dropout,
         future_wind_mode=getattr(args, "future_wind_mode", "target"),
         target_mean=None if stats is None else stats.target_mean,
@@ -600,6 +759,174 @@ def _checkpoint_state_dict(model: torch.nn.Module) -> dict[str, torch.Tensor]:
     return raw_model.state_dict()
 
 
+def _seed_everything(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def _capture_rng_state() -> dict[str, object]:
+    state: dict[str, object] = {
+        "python": random.getstate(),
+        "numpy": np.random.get_state(),
+        "torch": torch.get_rng_state(),
+    }
+    if torch.cuda.is_available():
+        state["cuda"] = torch.cuda.get_rng_state_all()
+    return state
+
+
+def _restore_rng_state(state: dict[str, object]) -> None:
+    random.setstate(state["python"])
+    np.random.set_state(state["numpy"])
+    torch.set_rng_state(state["torch"])
+    cuda_state = state.get("cuda")
+    if cuda_state is not None and torch.cuda.is_available():
+        torch.cuda.set_rng_state_all(cuda_state)
+
+
+def _epoch_data_generator(seed: int, epoch: int) -> torch.Generator:
+    generator = torch.Generator()
+    generator.manual_seed(int(seed) + int(epoch))
+    return generator
+
+
+def _checkpoint_training_config(
+    args: argparse.Namespace,
+    lead_hours: tuple[int, ...],
+) -> dict[str, object]:
+    config = {}
+    for field in RESUME_CONFIG_FIELDS:
+        if field == "lead_hours":
+            continue
+        value = getattr(args, field)
+        config[field] = str(value.resolve()) if isinstance(value, Path) else value
+    config["lead_hours"] = list(lead_hours)
+    return config
+
+
+def _validate_resume_checkpoint(
+    checkpoint: dict[str, object],
+    args: argparse.Namespace,
+    lead_hours: tuple[int, ...],
+) -> None:
+    version = int(checkpoint.get("checkpoint_version", 0))
+    required = (
+        "optimizer_state_dict",
+        "scaler_state_dict",
+        "progress",
+        "rng_state",
+        "training_config",
+    )
+    missing = [name for name in required if name not in checkpoint]
+    if version < CHECKPOINT_VERSION or missing:
+        details = ", ".join(missing) if missing else f"version={version}"
+        raise ValueError(
+            "This is a legacy weights-only checkpoint and cannot be resumed losslessly "
+            f"({details}). Start a new run or use it only for model initialization."
+        )
+
+    expected = _checkpoint_training_config(args, lead_hours)
+    saved = checkpoint["training_config"]
+    mismatches = []
+    for field in RESUME_CONFIG_FIELDS:
+        if saved.get(field) != expected.get(field):
+            mismatches.append(f"{field}: saved={saved.get(field)!r}, current={expected.get(field)!r}")
+    if mismatches:
+        raise ValueError("Resume configuration mismatch: " + "; ".join(mismatches))
+
+
+def _load_checkpoint(path: Path | str) -> dict[str, object]:
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Resume checkpoint does not exist: {path}")
+    try:
+        checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+    except TypeError:
+        checkpoint = torch.load(path, map_location="cpu")
+    if not isinstance(checkpoint, dict):
+        raise TypeError(f"Checkpoint must contain a dictionary: {path}")
+    return checkpoint
+
+
+def _atomic_torch_save(payload: dict[str, object], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(f"{path.name}.tmp")
+    try:
+        torch.save(payload, temporary_path)
+        temporary_path.replace(path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
+
+
+def _optimizer_to_device(optimizer: torch.optim.Optimizer, device: torch.device) -> None:
+    for state in optimizer.state.values():
+        for key, value in state.items():
+            if isinstance(value, torch.Tensor):
+                state[key] = value.to(device)
+
+
+def _build_training_checkpoint(
+    *,
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scaler,
+    stats: NormalizationStats,
+    lead_hours: tuple[int, ...],
+    args: argparse.Namespace,
+    epoch: int,
+    step_in_epoch: int,
+    epoch_complete: bool,
+    epoch_loss_sum: float,
+    epoch_loss_count: int,
+    train_samples: int,
+    train_seconds: float,
+    train_log: list[dict[str, object]],
+    metrics_rows: list[dict[str, object]],
+    best_val: float,
+    epochs_without_improvement: int,
+) -> dict[str, object]:
+    return {
+        "checkpoint_version": CHECKPOINT_VERSION,
+        "model_state_dict": _checkpoint_state_dict(model),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "scheduler_state_dict": None,
+        "scaler_state_dict": scaler.state_dict(),
+        "rng_state": _capture_rng_state(),
+        "progress": {
+            "epoch": int(epoch),
+            "step_in_epoch": int(step_in_epoch),
+            "epoch_complete": bool(epoch_complete),
+            "epoch_loss_sum": float(epoch_loss_sum),
+            "epoch_loss_count": int(epoch_loss_count),
+            "train_samples": int(train_samples),
+            "train_seconds": float(train_seconds),
+        },
+        "train_log": list(train_log),
+        "metrics_rows": list(metrics_rows),
+        "best_val": float(best_val),
+        "epochs_without_improvement": int(epochs_without_improvement),
+        "training_config": _checkpoint_training_config(args, lead_hours),
+        "stats": stats.to_dict(),
+        "lead_hours": lead_hours,
+        "history_hours": args.history_hours,
+        "hidden_channels": args.hidden_channels,
+        "target_channels": 4,
+        "input_region": args.input_region,
+        "output_region": args.output_region,
+        "model_variant": args.model_variant,
+        "future_wind_mode": args.future_wind_mode,
+        "precision": args.precision,
+        "dropout": args.dropout,
+        "split_embargo_hours": args.split_embargo_hours,
+        "loss_mode": args.loss_mode,
+        "direction_loss_weight": args.direction_loss_weight,
+    }
+
+
 def _move_batch_to_device(
     batch: dict[str, object],
     device: torch.device,
@@ -633,6 +960,22 @@ def _pause_after_epoch(
     sleeper(pause_seconds)
 
 
+def _pause_after_step(
+    step: int,
+    total_steps: int,
+    every_steps: int,
+    seconds: float,
+    sleeper=time.sleep,
+    logger=print,
+) -> None:
+    interval = int(every_steps)
+    pause_seconds = float(seconds)
+    if interval <= 0 or pause_seconds <= 0 or step >= total_steps or step % interval != 0:
+        return
+    logger(f"step={step}/{total_steps} pause_seconds={pause_seconds:.1f}")
+    sleeper(pause_seconds)
+
+
 def _predict_batch(
     model: torch.nn.Module,
     batch: dict[str, object],
@@ -660,28 +1003,45 @@ def _evaluate_persistence_loader(
     stats: NormalizationStats,
     device: torch.device,
     lead_hours: tuple[int, ...],
+    loss_mode: str = "mse",
+    direction_loss_weight: float = 1.0,
 ) -> tuple[float, list[dict[str, float | int]]]:
-    losses = []
+    loss_totals = _empty_loss_totals(loss_mode)
     per_lead = _empty_per_lead_metrics(lead_hours)
     for batch in loader:
         batch = _move_batch_to_device(batch, device, non_blocking=False)
         predictions = batch["persistence"]
         targets = batch["targets"]
-        losses.append(float(masked_mse_loss(predictions, targets).cpu()))
+        _append_loss_totals(
+            loss_totals,
+            predictions,
+            targets,
+            stats,
+            require_finite_prediction=True,
+        )
         pred_raw = _denormalize_targets(predictions, stats, device)
         target_raw = _denormalize_targets(targets, stats, device)
         _append_per_lead_metrics(per_lead, pred_raw, target_raw, lead_hours)
-    return float(np.mean(losses)), _finalize_per_lead_metrics(per_lead)
+    return (
+        _finalize_loss_totals(loss_totals, direction_loss_weight),
+        _finalize_per_lead_metrics(per_lead),
+    )
 
 
 def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not rows:
         return
-    with path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=list(rows[0].keys()))
-        writer.writeheader()
-        writer.writerows(rows)
+    temporary_path = path.with_name(f"{path.name}.tmp")
+    try:
+        with temporary_path.open("w", newline="", encoding="utf-8") as file:
+            writer = csv.DictWriter(file, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(rows)
+        temporary_path.replace(path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
 
 
 def _plot_training_curve(path: Path, rows: list[dict[str, float | int]]) -> None:
@@ -751,7 +1111,22 @@ def _write_preview(path: Path, metadata_path: Path, predictions: torch.Tensor, t
 
 
 def train(args: argparse.Namespace) -> dict[str, float]:
+    if args.checkpoint_every_steps < 0:
+        raise ValueError("checkpoint_every_steps must be non-negative")
+    if args.step_pause_every < 0 or args.step_pause_seconds < 0:
+        raise ValueError("step pause settings must be non-negative")
+    if args.split_embargo_hours < 0:
+        raise ValueError("split_embargo_hours must be non-negative")
+    if args.direction_loss_weight < 0:
+        raise ValueError("direction_loss_weight must be non-negative")
+
+    _seed_everything(args.seed)
     lead_hours = parse_lead_hours(args.lead_hours)
+    resume_checkpoint = None
+    if args.resume_checkpoint is not None:
+        resume_checkpoint = _load_checkpoint(args.resume_checkpoint)
+        _validate_resume_checkpoint(resume_checkpoint, args, lead_hours)
+
     out_dir = _output_dir_from_args(args)
     checkpoint_dir = out_dir / "checkpoints"
     log_dir = out_dir / "logs"
@@ -762,10 +1137,21 @@ def train(args: argparse.Namespace) -> dict[str, float]:
 
     wind, wave, initialization_times, lead_hours = _prepare_datasets(args)
     train_times, val_times, test_times = _split_times_for_training(args, initialization_times)
+    print(
+        "split "
+        f"train={len(train_times)} [{train_times[0]} .. {train_times[-1]}] "
+        f"validation={len(val_times)} [{val_times[0]} .. {val_times[-1]}] "
+        f"test={len(test_times)} [{test_times[0]} .. {test_times[-1]}] "
+        f"embargo_hours={args.split_embargo_hours}",
+        flush=True,
+    )
     data_args = args
     if args.preload_spatial:
         wind, wave, data_args = _preload_spatial_datasets(wind, wave, args)
-    stats = _normalization_stats_for_training(wind, wave, train_times, data_args, lead_hours)
+    if resume_checkpoint is None:
+        stats = _normalization_stats_for_training(wind, wave, train_times, data_args, lead_hours)
+    else:
+        stats = NormalizationStats.from_dict(resume_checkpoint["stats"])
 
     with (out_dir / "normalization.json").open("w", encoding="utf-8") as file:
         json.dump(stats.to_dict(), file, indent=2)
@@ -782,35 +1168,109 @@ def train(args: argparse.Namespace) -> dict[str, float]:
             output_region=parse_region(data_args.output_region),
         )
 
-    train_loader = _make_loader(wind, wave, train_times, stats, data_args, lead_hours, shuffle=True, fast_cache=fast_cache)
+    train_generator = _epoch_data_generator(args.seed, 1)
+    train_loader = _make_loader(
+        wind,
+        wave,
+        train_times,
+        stats,
+        data_args,
+        lead_hours,
+        shuffle=True,
+        fast_cache=fast_cache,
+        generator=train_generator,
+    )
     val_loader = _make_loader(wind, wave, val_times, stats, data_args, lead_hours, shuffle=False, fast_cache=fast_cache)
     test_loader = _make_loader(wind, wave, test_times, stats, data_args, lead_hours, shuffle=False, fast_cache=fast_cache)
     device = _device_from_arg(args.device)
     _configure_torch_runtime(args, device)
     model = _build_model(args, len(lead_hours), stats=stats).to(device)
+    if resume_checkpoint is not None:
+        model.load_state_dict(resume_checkpoint["model_state_dict"])
     model = _maybe_compile_model(model, args, device)
     optimizer = _build_optimizer(model, args)
     scaler = _build_grad_scaler(args.precision, device)
     non_blocking = bool(args.pin_memory and device.type == "cuda")
 
-    train_log = []
-    metrics_rows = []
+    train_log: list[dict[str, object]] = []
+    metrics_rows: list[dict[str, object]] = []
     best_val = float("inf")
     epochs_without_improvement = 0
+    start_epoch = 1
+    resume_step = 0
+    resume_epoch_loss_sum = 0.0
+    resume_epoch_loss_count = 0
+    resume_train_samples = 0
+    resume_train_seconds = 0.0
+    resume_rng_state = None
 
-    for epoch in range(1, args.epochs + 1):
-        epoch_start = time.perf_counter()
+    if resume_checkpoint is not None:
+        optimizer.load_state_dict(resume_checkpoint["optimizer_state_dict"])
+        _optimizer_to_device(optimizer, device)
+        scaler.load_state_dict(resume_checkpoint["scaler_state_dict"])
+        train_log = [dict(row) for row in resume_checkpoint.get("train_log", [])]
+        metrics_rows = [dict(row) for row in resume_checkpoint.get("metrics_rows", [])]
+        best_val = float(resume_checkpoint.get("best_val", float("inf")))
+        epochs_without_improvement = int(resume_checkpoint.get("epochs_without_improvement", 0))
+        progress = resume_checkpoint["progress"]
+        checkpoint_epoch = int(progress["epoch"])
+        if bool(progress["epoch_complete"]):
+            start_epoch = checkpoint_epoch + 1
+        else:
+            start_epoch = checkpoint_epoch
+            resume_step = int(progress["step_in_epoch"])
+            resume_epoch_loss_sum = float(progress["epoch_loss_sum"])
+            resume_epoch_loss_count = int(progress["epoch_loss_count"])
+            resume_train_samples = int(progress["train_samples"])
+            resume_train_seconds = float(progress["train_seconds"])
+        resume_rng_state = resume_checkpoint["rng_state"]
+        print(
+            f"resume checkpoint={args.resume_checkpoint} start_epoch={start_epoch} "
+            f"completed_step={resume_step} target_epochs={args.epochs}",
+            flush=True,
+        )
+
+    latest_checkpoint_path = checkpoint_dir / "seq2seq_convlstm_latest.pt"
+    best_checkpoint_path = checkpoint_dir / "seq2seq_convlstm_best.pt"
+
+    for epoch in range(start_epoch, args.epochs + 1):
+        continuing_partial_epoch = epoch == start_epoch and resume_step > 0
+        epoch_loss_sum = resume_epoch_loss_sum if continuing_partial_epoch else 0.0
+        epoch_loss_count = resume_epoch_loss_count if continuing_partial_epoch else 0
+        train_samples = resume_train_samples if continuing_partial_epoch else 0
+        previous_train_seconds = resume_train_seconds if continuing_partial_epoch else 0.0
+
+        train_generator.manual_seed(int(args.seed) + epoch)
+        train_iterator = iter(train_loader)
+        if continuing_partial_epoch:
+            for _ in range(resume_step):
+                try:
+                    next(train_iterator)
+                except StopIteration as exc:
+                    raise ValueError(
+                        f"Checkpoint step {resume_step} exceeds epoch length {len(train_loader)}"
+                    ) from exc
+        if resume_rng_state is not None:
+            _restore_rng_state(resume_rng_state)
+            resume_rng_state = None
+
         train_start = time.perf_counter()
         model.train()
-        epoch_losses = []
-        train_samples = 0
-        for step, batch in enumerate(train_loader, start=1):
+        completed_step = resume_step if continuing_partial_epoch else 0
+        for step, batch in enumerate(train_iterator, start=completed_step + 1):
             batch = _move_batch_to_device(batch, device, non_blocking=non_blocking)
             targets = batch["targets"]
             optimizer.zero_grad(set_to_none=True)
             with _autocast_context(args.precision, device):
                 predictions = _predict_batch(model, batch, device, args.model_variant)
-                loss = masked_mse_loss(predictions, targets)
+                loss = wind_wave_loss(
+                    predictions,
+                    targets,
+                    mode=args.loss_mode,
+                    target_mean=stats.target_mean,
+                    target_std=stats.target_std,
+                    direction_weight=args.direction_loss_weight,
+                )
             if scaler.is_enabled():
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
@@ -818,19 +1278,52 @@ def train(args: argparse.Namespace) -> dict[str, float]:
             else:
                 loss.backward()
                 optimizer.step()
-            epoch_losses.append(float(loss.detach().cpu()))
+            loss_value = float(loss.detach().cpu())
+            epoch_loss_sum += loss_value
+            epoch_loss_count += 1
             train_samples += int(targets.shape[0])
+            completed_step = step
             if args.log_every > 0 and step % args.log_every == 0:
-                elapsed = time.perf_counter() - train_start
+                elapsed = previous_train_seconds + (time.perf_counter() - train_start)
                 samples_per_second = train_samples / max(elapsed, 1e-9)
                 print(
                     f"epoch={epoch} step={step}/{len(train_loader)} "
-                    f"loss={epoch_losses[-1]:.6f} samples_per_second={samples_per_second:.1f}",
+                    f"loss={loss_value:.6f} samples_per_second={samples_per_second:.1f}",
                     flush=True,
                 )
+            if args.checkpoint_every_steps > 0 and step % args.checkpoint_every_steps == 0:
+                _sync_cuda(device)
+                elapsed = previous_train_seconds + (time.perf_counter() - train_start)
+                checkpoint = _build_training_checkpoint(
+                    model=model,
+                    optimizer=optimizer,
+                    scaler=scaler,
+                    stats=stats,
+                    lead_hours=lead_hours,
+                    args=args,
+                    epoch=epoch,
+                    step_in_epoch=step,
+                    epoch_complete=False,
+                    epoch_loss_sum=epoch_loss_sum,
+                    epoch_loss_count=epoch_loss_count,
+                    train_samples=train_samples,
+                    train_seconds=elapsed,
+                    train_log=train_log,
+                    metrics_rows=metrics_rows,
+                    best_val=best_val,
+                    epochs_without_improvement=epochs_without_improvement,
+                )
+                _atomic_torch_save(checkpoint, latest_checkpoint_path)
+                print(f"checkpoint epoch={epoch} step={step}/{len(train_loader)}", flush=True)
+            _pause_after_step(
+                step,
+                len(train_loader),
+                args.step_pause_every,
+                args.step_pause_seconds,
+            )
 
         _sync_cuda(device)
-        train_seconds = time.perf_counter() - train_start
+        train_seconds = previous_train_seconds + (time.perf_counter() - train_start)
 
         val_start = time.perf_counter()
         val_loss, val_metrics = _evaluate_loader(
@@ -842,11 +1335,13 @@ def train(args: argparse.Namespace) -> dict[str, float]:
             args.model_variant,
             precision=args.precision,
             non_blocking=non_blocking,
+            loss_mode=args.loss_mode,
+            direction_loss_weight=args.direction_loss_weight,
         )
         _sync_cuda(device)
         val_seconds = time.perf_counter() - val_start
-        epoch_seconds = time.perf_counter() - epoch_start
-        train_loss = float(np.mean(epoch_losses))
+        epoch_seconds = train_seconds + val_seconds
+        train_loss = epoch_loss_sum / max(epoch_loss_count, 1)
         samples_per_second = train_samples / max(train_seconds, 1e-9)
         train_log.append(
             {
@@ -868,29 +1363,47 @@ def train(args: argparse.Namespace) -> dict[str, float]:
         for row in val_metrics:
             metrics_rows.append({"epoch": epoch, "split": "validation", **row})
 
-        checkpoint = {
-            "model_state_dict": _checkpoint_state_dict(model),
-            "stats": stats.to_dict(),
-            "lead_hours": lead_hours,
-            "history_hours": args.history_hours,
-            "hidden_channels": args.hidden_channels,
-            "target_channels": 4,
-            "input_region": args.input_region,
-            "output_region": args.output_region,
-            "model_variant": args.model_variant,
-            "future_wind_mode": args.future_wind_mode,
-            "precision": args.precision,
-            "dropout": args.dropout,
-        }
-        torch.save(checkpoint, checkpoint_dir / "seq2seq_convlstm_latest.pt")
-        if val_loss < best_val:
+        improved = val_loss < best_val
+        if improved:
             best_val = val_loss
             epochs_without_improvement = 0
-            torch.save(checkpoint, checkpoint_dir / "seq2seq_convlstm_best.pt")
         else:
             epochs_without_improvement += 1
-            if _should_stop_early(epochs_without_improvement, args.early_stopping_patience):
-                break
+
+        checkpoint = _build_training_checkpoint(
+            model=model,
+            optimizer=optimizer,
+            scaler=scaler,
+            stats=stats,
+            lead_hours=lead_hours,
+            args=args,
+            epoch=epoch,
+            step_in_epoch=len(train_loader),
+            epoch_complete=True,
+            epoch_loss_sum=epoch_loss_sum,
+            epoch_loss_count=epoch_loss_count,
+            train_samples=train_samples,
+            train_seconds=train_seconds,
+            train_log=train_log,
+            metrics_rows=metrics_rows,
+            best_val=best_val,
+            epochs_without_improvement=epochs_without_improvement,
+        )
+        _atomic_torch_save(checkpoint, latest_checkpoint_path)
+        if improved:
+            _atomic_torch_save(checkpoint, best_checkpoint_path)
+        _write_csv(log_dir / "train_log.csv", train_log)
+        _write_csv(log_dir / "metrics_by_lead.csv", metrics_rows)
+        _plot_training_curve(log_dir / "training_curve.png", train_log)
+        print(f"checkpoint epoch={epoch} complete=true best_val={best_val:.6f}", flush=True)
+
+        resume_step = 0
+        resume_epoch_loss_sum = 0.0
+        resume_epoch_loss_count = 0
+        resume_train_samples = 0
+        resume_train_seconds = 0.0
+        if _should_stop_early(epochs_without_improvement, args.early_stopping_patience):
+            break
         _pause_after_epoch(epoch, args.epochs, args.epoch_pause_seconds)
 
     _write_csv(log_dir / "train_log.csv", train_log)
@@ -898,10 +1411,20 @@ def train(args: argparse.Namespace) -> dict[str, float]:
     _plot_training_curve(log_dir / "training_curve.png", train_log)
 
     val_persistence_loss, val_persistence_metrics = _evaluate_persistence_loader(
-        val_loader, stats, device, lead_hours
+        val_loader,
+        stats,
+        device,
+        lead_hours,
+        loss_mode=args.loss_mode,
+        direction_loss_weight=args.direction_loss_weight,
     )
     test_persistence_loss, test_persistence_metrics = _evaluate_persistence_loader(
-        test_loader, stats, device, lead_hours
+        test_loader,
+        stats,
+        device,
+        lead_hours,
+        loss_mode=args.loss_mode,
+        direction_loss_weight=args.direction_loss_weight,
     )
     baseline_rows = [
         *({"split": "validation", **row} for row in val_persistence_metrics),

@@ -8,6 +8,7 @@ import torch
 
 from .dataset import NormalizationStats
 from .train import (
+    _load_checkpoint,
     _device_from_arg,
     _evaluate_loader,
     _build_model,
@@ -22,6 +23,24 @@ from .train import (
 )
 
 
+_LEGACY_MISSING_MODEL_KEYS = {"target_mean", "target_std"}
+
+
+def _load_model_state(
+    model: torch.nn.Module,
+    state_dict: dict[str, torch.Tensor],
+) -> None:
+    incompatible = model.load_state_dict(state_dict, strict=False)
+    missing = set(incompatible.missing_keys)
+    unexpected = set(incompatible.unexpected_keys)
+    unsupported_missing = missing - _LEGACY_MISSING_MODEL_KEYS
+    if unsupported_missing or unexpected:
+        raise RuntimeError(
+            "Checkpoint model state is incompatible: "
+            f"missing={sorted(unsupported_missing)}, unexpected={sorted(unexpected)}"
+        )
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = build_train_arg_parser()
     parser.description = "Evaluate a saved ConvLSTM wind-to-wave seq2seq model."
@@ -31,13 +50,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def evaluate(args: argparse.Namespace) -> dict[str, float]:
     device = _device_from_arg(args.device)
-    checkpoint = torch.load(args.checkpoint, map_location=device)
+    checkpoint = _load_checkpoint(args.checkpoint)
     stats = NormalizationStats.from_dict(checkpoint["stats"])
     lead_hours = tuple(int(value) for value in checkpoint.get("lead_hours", parse_lead_hours(args.lead_hours)))
     args.model_variant = checkpoint.get("model_variant", args.model_variant)
     args.future_wind_mode = checkpoint.get("future_wind_mode", args.future_wind_mode)
     args.dropout = checkpoint.get("dropout", args.dropout)
     args.precision = checkpoint.get("precision", args.precision)
+    args.split_embargo_hours = checkpoint.get(
+        "split_embargo_hours", args.split_embargo_hours
+    )
+    args.loss_mode = checkpoint.get("loss_mode", args.loss_mode)
+    args.direction_loss_weight = checkpoint.get(
+        "direction_loss_weight", args.direction_loss_weight
+    )
 
     wind, wave, initialization_times, _ = _prepare_datasets(args)
     _, _, test_times = _split_times_for_training(args, initialization_times)
@@ -46,7 +72,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, float]:
         wind, wave, data_args = _preload_spatial_datasets(wind, wave, args)
     loader = _make_loader(wind, wave, test_times, stats, data_args, lead_hours, shuffle=False)
     model = _build_model(args, len(lead_hours), stats=stats).to(device)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    _load_model_state(model, checkpoint["model_state_dict"])
 
     loss, metric_rows = _evaluate_loader(
         model,
@@ -57,6 +83,8 @@ def evaluate(args: argparse.Namespace) -> dict[str, float]:
         args.model_variant,
         precision=args.precision,
         non_blocking=bool(args.pin_memory and device.type == "cuda"),
+        loss_mode=args.loss_mode,
+        direction_loss_weight=args.direction_loss_weight,
     )
     rows = [{"split": "test", **row} for row in metric_rows]
     _write_csv(_output_dir_from_args(args) / "logs" / "test_metrics_by_lead.csv", rows)

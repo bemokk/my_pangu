@@ -232,3 +232,44 @@ def test_v2_residual_model_replaces_nan_wave0_before_residual_add():
     assert torch.allclose(y[:, :, :2, 0, 0], torch.zeros_like(y[:, :, :2, 0, 0]))
     assert torch.allclose(y[:, :, 2, 0, 0], torch.ones_like(y[:, :, 2, 0, 0]))
     assert torch.allclose(y[:, :, 3, 0, 0], torch.zeros_like(y[:, :, 3, 0, 0]))
+
+
+def test_v2_direct_unit_direction_normalizes_in_physical_target_space():
+    target_mean = torch.tensor([10.0, 20.0, 0.2, -0.3])
+    target_std = torch.tensor([2.0, 4.0, 0.5, 0.25])
+    model = WindWaveV2Model(
+        hidden_channels=4,
+        lead_count=1,
+        target_channels=4,
+        use_wave0=True,
+        residual=False,
+        normalize_direction_output=True,
+        target_mean=target_mean,
+        target_std=target_std,
+    )
+    for head in model.heads:
+        for module in head.modules():
+            if hasattr(module, "weight") and module.weight is not None:
+                torch.nn.init.zeros_(module.weight)
+            if hasattr(module, "bias") and module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        head[-1].bias.data.copy_(torch.tensor([0.0, 0.0, 1.0, 1.0]))
+
+    past_wind = torch.zeros(1, 24, 2, 4, 4)
+    future_wind = torch.zeros(1, 1, 2, 4, 4)
+    wave0 = torch.zeros(1, 4, 2, 3)
+    prediction = model(
+        past_wind,
+        future_wind=future_wind,
+        wave0=wave0,
+        output_size=(2, 3),
+    )
+    prediction_raw = (
+        prediction * target_std.view(1, 1, 4, 1, 1)
+        + target_mean.view(1, 1, 4, 1, 1)
+    )
+    direction_norm = torch.sqrt(
+        prediction_raw[:, :, 2].square() + prediction_raw[:, :, 3].square()
+    )
+
+    assert torch.allclose(direction_norm, torch.ones_like(direction_norm), atol=1e-5)

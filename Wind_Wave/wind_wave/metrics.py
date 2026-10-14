@@ -30,3 +30,36 @@ def circular_mae_degrees(
     target_angle = torch.atan2(target_sin[mask], target_cos[mask])
     diff = torch.atan2(torch.sin(pred_angle - target_angle), torch.cos(pred_angle - target_angle))
     return torch.rad2deg(torch.mean(torch.abs(diff)))
+
+
+def squared_error_sum_and_count(
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+) -> tuple[torch.Tensor, int]:
+    mask = torch.isfinite(prediction) & torch.isfinite(target)
+    count = int(mask.sum().item())
+    if count == 0:
+        return prediction.new_zeros(()), 0
+    diff = prediction[mask] - target[mask]
+    return torch.sum(diff * diff), count
+
+
+def circular_absolute_error_sum_and_count(
+    pred_sin: torch.Tensor,
+    pred_cos: torch.Tensor,
+    target_sin: torch.Tensor,
+    target_cos: torch.Tensor,
+) -> tuple[torch.Tensor, int]:
+    mask = (
+        torch.isfinite(pred_sin)
+        & torch.isfinite(pred_cos)
+        & torch.isfinite(target_sin)
+        & torch.isfinite(target_cos)
+    )
+    count = int(mask.sum().item())
+    if count == 0:
+        return pred_sin.new_zeros(()), 0
+    pred_angle = torch.atan2(pred_sin[mask], pred_cos[mask])
+    target_angle = torch.atan2(target_sin[mask], target_cos[mask])
+    diff = torch.atan2(torch.sin(pred_angle - target_angle), torch.cos(pred_angle - target_angle))
+    return torch.rad2deg(torch.sum(torch.abs(diff))), count

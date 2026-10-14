@@ -38,3 +38,28 @@ def test_chronological_split_keeps_each_split_nonempty_for_smoke_test():
     assert len(val) == 1
     assert len(test) == 1
     assert train[-1] < val[0] < test[0]
+
+
+def test_chronological_split_applies_time_embargo_at_both_boundaries():
+    times = pd.date_range("2025-01-01", periods=40, freq="h")
+
+    train, val, test = chronological_split(
+        times,
+        train_fraction=0.5,
+        val_fraction=0.25,
+        embargo_hours=4,
+    )
+
+    assert val[0] - train[-1] == pd.Timedelta(hours=4)
+    assert test[0] - val[-1] == pd.Timedelta(hours=4)
+
+
+def test_chronological_split_rejects_negative_embargo():
+    times = pd.date_range("2025-01-01", periods=20, freq="h")
+
+    try:
+        chronological_split(times, embargo_hours=-1)
+    except ValueError as exc:
+        assert "embargo_hours" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")

@@ -2,7 +2,7 @@ import math
 
 import torch
 
-from wind_wave.losses import masked_mse_loss
+from wind_wave.losses import masked_mse_loss, wind_wave_loss
 from wind_wave.metrics import circular_mae_degrees
 
 
@@ -34,3 +34,19 @@ def test_circular_mae_uses_shortest_angle():
     target_cos = torch.tensor([math.cos(math.radians(1.0))])
 
     assert circular_mae_degrees(pred_sin, pred_cos, target_sin, target_cos).item() < 3.0
+
+
+def test_scalar_circular_loss_combines_scalar_mse_and_direction_error():
+    prediction = torch.tensor([[[[[2.0]], [[4.0]], [[0.0]], [[1.0]]]]])
+    target = torch.tensor([[[[[1.0]], [[2.0]], [[1.0]], [[0.0]]]]])
+
+    loss = wind_wave_loss(
+        prediction,
+        target,
+        mode="scalar-circular",
+        target_mean=(0.0, 0.0, 0.0, 0.0),
+        target_std=(1.0, 1.0, 1.0, 1.0),
+        direction_weight=1.0,
+    )
+
+    assert torch.isclose(loss, torch.tensor(3.5))

@@ -144,6 +144,7 @@ class WindWaveV2Model(nn.Module):
         layers: int = 1,
         dropout: float = 0.0,
         future_wind_mode: str = "target",
+        normalize_direction_output: bool = False,
         target_mean: torch.Tensor | list[float] | tuple[float, ...] | None = None,
         target_std: torch.Tensor | list[float] | tuple[float, ...] | None = None,
     ) -> None:
@@ -157,6 +158,7 @@ class WindWaveV2Model(nn.Module):
         self.use_wave0 = use_wave0
         self.residual = residual
         self.future_wind_mode = future_wind_mode
+        self.normalize_direction_output = bool(normalize_direction_output)
         self.past_encoder = ConvLSTMEncoder(
             input_channels=2,
             hidden_channels=hidden_channels,
@@ -259,6 +261,24 @@ class WindWaveV2Model(nn.Module):
         residual_prediction[:, 3:4] = (sin_pred - mean[:, 3:4]) / std[:, 3:4]
         return residual_prediction
 
+    def _apply_direct_direction_constraint(self, prediction: torch.Tensor) -> torch.Tensor:
+        if self.target_channels < 4:
+            return prediction
+
+        mean = self.target_mean.to(dtype=prediction.dtype, device=prediction.device)
+        std = self.target_std.to(dtype=prediction.dtype, device=prediction.device)
+        prediction_raw = prediction * std + mean
+        cos_pred, sin_pred = self._normalize_direction(
+            prediction_raw[:, 2:3],
+            prediction_raw[:, 3:4],
+            default_cos=1.0,
+            default_sin=0.0,
+        )
+        constrained = prediction.clone()
+        constrained[:, 2:3] = (cos_pred - mean[:, 2:3]) / std[:, 2:3]
+        constrained[:, 3:4] = (sin_pred - mean[:, 3:4]) / std[:, 3:4]
+        return constrained
+
     def forward(
         self,
         past_wind: torch.Tensor,
@@ -343,5 +363,7 @@ class WindWaveV2Model(nn.Module):
                         align_corners=False,
                     )
                 prediction = self._apply_wave0_residual(prediction, residual_base)
+            elif self.normalize_direction_output:
+                prediction = self._apply_direct_direction_constraint(prediction)
             outputs.append(prediction)
         return torch.stack(outputs, dim=1)
