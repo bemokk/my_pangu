@@ -48,3 +48,35 @@ __pycache__/
 
 # local release archives (GitHub's regular Git file limit is 100 MB)
 release/*.zip
+
+## experiment_2025 local data and generated results
+experiment_2025/icoads/nc/
+experiment_2025/icoads/raw/
+experiment_2025/icoads/manifest.json
+experiment_2025/icoads/verification.json
+experiment_2025/Statistics/data/
+experiment_2025/plots/figures/
+experiment_2025/gdas/_runs/
+experiment_2025/gdas/raw/
+
+## old archive: keep source code, omit local datasets and generated artifacts
+old/**/*.nc
+old/**/*.npy
+old/**/*.npz
+old/**/*.grib
+old/**/*.grib2
+old/**/*.dat.gz
+old/**/*.png
+old/**/*.pdf
+old/**/*.svg
+old/**/*.csv
+old/**/results/
+old/**/model_input/
+old/**/model_output/
+old/**/icoads_*/
+old/**/*.jpeg
+old/**/*.jpg
+old/**/*.xlsx
+old/**/*.zip
+old/**/ne_10m_land/
+!old/src/ne_10m_land.zip
