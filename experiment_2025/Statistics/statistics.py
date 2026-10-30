@@ -2,8 +2,9 @@
 
 The program uses only ICOADS records whose manifest ``kind`` is ``updated`` and
 whose file is NetCDF.  It samples the model u10/v10 fields at each observation
-location with bilinear interpolation, then writes speed and direction RMSE,
-MAE, and correlation by lead hour and valid-time month.
+location with bilinear interpolation, then writes speed and direction RMSE and
+MAE by lead hour and valid-time month. RMSE, MAE and CC are computed for each
+target day and lead, then averaged with equal weight over valid daily cases.
 """
 from __future__ import annotations
 
@@ -31,9 +32,10 @@ DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_ROOT = Path(r"H:\pangu_2025_data\model_output\experiment_2025")
 DEFAULT_ICOADS_ROOT = DEFAULT_ROOT / "icoads"
 DEFAULT_DATA_ROOT = Path(__file__).resolve().parent / "data"
-AREA = [30.0, 105.0, 10.0, 130.0]  # lat_max, lon_min, lat_min, lon_max
+AREA = [42.0, 103.0, 13.0, 130.0]  # lat_max, lon_min, lat_min, lon_max
 EXPERIMENT_NAMES = ("gdas_direct", "era5_lagged_120h", "era5_direct", "gdas_lagged_120h")
 LEADS = tuple(range(0, 121, 3))
+NETCDF_LOCK = threading.Lock()
 
 
 @dataclass
@@ -183,9 +185,10 @@ class GridSampler:
     """Read only the model grid rectangle surrounding the observation area."""
 
     def __init__(self, path: Path, area: list[float]):
-        with nc.Dataset(path) as ds:
-            self.latitude = np.asarray(ds.variables["latitude"][:], dtype=float)
-            self.longitude = np.asarray(ds.variables["longitude"][:], dtype=float)
+        with NETCDF_LOCK:
+            with nc.Dataset(path) as ds:
+                self.latitude = np.asarray(ds.variables["latitude"][:], dtype=float)
+                self.longitude = np.asarray(ds.variables["longitude"][:], dtype=float)
         if self.latitude[0] > self.latitude[-1]:
             self.lat_ascending = self.latitude[::-1]
             self.lat_reversed = True
@@ -223,10 +226,11 @@ class GridSampler:
             col_max = len(self.longitude) - 1 - sorted_col_min
         else:
             col_min, col_max = sorted_col_min, sorted_col_max
-        with nc.Dataset(path) as ds:
-            ds.set_auto_mask(False)
-            u = np.asarray(ds.variables["u10"][row_min : row_max + 1, col_min : col_max + 1], dtype=float)
-            v = np.asarray(ds.variables["v10"][row_min : row_max + 1, col_min : col_max + 1], dtype=float)
+        with NETCDF_LOCK:
+            with nc.Dataset(path) as ds:
+                ds.set_auto_mask(False)
+                u = np.asarray(ds.variables["u10"][row_min : row_max + 1, col_min : col_max + 1], dtype=float)
+                v = np.asarray(ds.variables["v10"][row_min : row_max + 1, col_min : col_max + 1], dtype=float)
         if self.lat_reversed:
             u = u[::-1, :]
             v = v[::-1, :]
@@ -349,11 +353,31 @@ def direction_metrics(part: Partial) -> dict:
     }
 
 
+def finite_mean(values: list[float]) -> float:
+    """Return the arithmetic mean of finite daily metric values."""
+    array = np.asarray(values, dtype=float)
+    array = array[np.isfinite(array)]
+    return float(np.mean(array)) if array.size else float("nan")
+
+
+def daily_metric_values(daily_stats: dict, key: tuple, variable: str) -> dict:
+    return daily_stats.get(key, {}).get(variable, {})
+
+
+def replace_with_daily_metrics(values: dict, daily_values: dict) -> dict:
+    values = dict(values)
+    for metric in ("rmse", "mae", "cc"):
+        samples = daily_values.get(metric, [])
+        values[metric] = finite_mean(samples)
+        values[f"{metric}_daily_count"] = int(np.isfinite(np.asarray(samples, dtype=float)).sum())
+    return values
+
+
 def model_path(output_root: Path, experiment: str, target: datetime, lead: int) -> Path:
     return wind_path(output_root, EXPERIMENTS[experiment], target, lead)
 
 
-def run_statistics(args) -> tuple[dict, list[dict], dict]:
+def run_statistics(args) -> tuple[dict, list[dict], dict, dict, list[dict]]:
     obs_by_time, obs_info = load_daily_updated(args.icoads_root, AREA)
     grid_path = None
     for experiment in args.experiments:
@@ -372,6 +396,11 @@ def run_statistics(args) -> tuple[dict, list[dict], dict]:
     sampler = GridSampler(grid_path, AREA)
     keys = [(exp, lead, month) for exp in args.experiments for lead in LEADS for month in range(1, 13)]
     totals = {key: Partial() for key in keys}
+    daily_cc = defaultdict(lambda: {
+        variable: {metric: [] for metric in ("rmse", "mae", "cc")}
+        for variable in ("wind_speed", "wind_direction")
+    })
+    daily_cc_rows = []
     missing = []
     task_specs = []
     for target in iter_targets(args.start_date, args.end_date):
@@ -390,30 +419,54 @@ def run_statistics(args) -> tuple[dict, list[dict], dict]:
         experiment, target, lead, valid_time, observations = spec
         path = model_path(args.output_root, experiment, target, lead)
         if not path.is_file():
-            return experiment, lead, valid_time.month, None, {"experiment": experiment, "target_time": time_label(target), "lead_hour": lead, "valid_time": time_label(valid_time), "path": str(path), "reason": "missing_output"}
+            return experiment, target, lead, valid_time, None, {"experiment": experiment, "target_time": time_label(target), "lead_hour": lead, "valid_time": time_label(valid_time), "path": str(path), "reason": "missing_output"}
         try:
             pu, pv = sampler.sample(path, observations["lat"], observations["lon"])
             part = make_partial(pu, pv, observations["speed"], observations["direction"])
-            return experiment, lead, valid_time.month, part, None
+            return experiment, target, lead, valid_time, part, None
         except Exception as exc:  # noqa: BLE001
-            return experiment, lead, valid_time.month, None, {"experiment": experiment, "target_time": time_label(target), "lead_hour": lead, "valid_time": time_label(valid_time), "path": str(path), "reason": f"sample_failed: {type(exc).__name__}: {exc}"}
+            return experiment, target, lead, valid_time, None, {"experiment": experiment, "target_time": time_label(target), "lead_hour": lead, "valid_time": time_label(valid_time), "path": str(path), "reason": f"sample_failed: {type(exc).__name__}: {exc}"}
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = [pool.submit(task, spec) for spec in task_specs]
         for future in as_completed(futures):
-            experiment, lead, month, part, error = future.result()
+            experiment, target, lead, valid_time, part, error = future.result()
             if part is not None:
+                month = valid_time.month
                 totals[(experiment, lead, month)].add(part)
+                daily_values = {"wind_speed": metrics(part), "wind_direction": direction_metrics(part)}
+                key = (experiment, lead, month)
+                for variable, metric_values in daily_values.items():
+                    for metric in ("rmse", "mae", "cc"):
+                        value = metric_values[metric]
+                        if np.isfinite(value):
+                            daily_cc[key][variable][metric].append(value)
+                daily_cc_rows.append(
+                    {
+                        "experiment": experiment,
+                        "target_time": time_label(target),
+                        "valid_time": time_label(valid_time),
+                        "lead_hour": lead,
+                        "month": month,
+                        "n": part.n,
+                        **{
+                            f"{variable}_{metric}": metric_values[metric]
+                            for variable, metric_values in daily_values.items()
+                            for metric in ("rmse", "mae", "cc")
+                        },
+                    }
+                )
             if error:
                 missing.append(error)
             with lock:
                 completed += 1
                 if completed % args.progress_every == 0 or completed == total_tasks:
                     print(f"[统计进度] {completed}/{total_tasks} 任务", flush=True)
-    return totals, missing, {"observations": obs_info, "grid_sample": str(grid_path), "tasks": total_tasks}
+    daily_cc_rows.sort(key=lambda row: (row["experiment"], row["lead_hour"], row["valid_time"]))
+    return totals, missing, {"observations": obs_info, "grid_sample": str(grid_path), "tasks": total_tasks}, daily_cc, daily_cc_rows
 
 
-def rows_for_totals(totals: dict, group: str, variable: str) -> list[dict]:
+def rows_for_totals(totals: dict, group: str, variable: str, daily_cc: dict) -> list[dict]:
     rows = []
     for (experiment, lead, month), part in sorted(totals.items()):
         if group == "lead":
@@ -423,11 +476,12 @@ def rows_for_totals(totals: dict, group: str, variable: str) -> list[dict]:
             values = metrics(part)
         else:
             values = direction_metrics(part)
+        values = replace_with_daily_metrics(values, daily_metric_values(daily_cc, (experiment, lead, month), variable))
         rows.append({"experiment": experiment, "lead_hour": lead, "month": month, "variable": variable, **values})
     return rows
 
 
-def aggregate(totals: dict, by: str, variable: str) -> list[dict]:
+def aggregate(totals: dict, by: str, variable: str, daily_cc: dict) -> list[dict]:
     groups: dict[tuple, Partial] = {}
     for (experiment, lead, month), part in totals.items():
         key = (experiment, lead) if by == "lead" else (experiment, month)
@@ -440,7 +494,15 @@ def aggregate(totals: dict, by: str, variable: str) -> list[dict]:
         else:
             row["month"] = key[1]
         row["variable"] = variable
-        row.update(metrics(part) if variable == "wind_speed" else direction_metrics(part))
+        values = metrics(part) if variable == "wind_speed" else direction_metrics(part)
+        daily_groups = {metric: [] for metric in ("rmse", "mae", "cc")}
+        for (experiment, lead, month), values_by_day in daily_cc.items():
+            if experiment != key[0]:
+                continue
+            if (by == "lead" and lead == key[1]) or (by == "month" and month == key[1]):
+                for metric in daily_groups:
+                    daily_groups[metric].extend(values_by_day[variable][metric])
+        row.update(replace_with_daily_metrics(values, daily_groups))
         output.append(row)
     return output
 
@@ -458,16 +520,18 @@ def write_csv(path: Path, rows: list[dict]) -> None:
         writer.writerows(rows)
 
 
-def save_results(args, totals, missing, info):
+def save_results(args, totals, missing, info, daily_cc, daily_cc_rows):
     args.data_root.mkdir(parents=True, exist_ok=True)
-    speed_lm = [row for row in rows_for_totals(totals, "lead_month", "wind_speed")]
-    direction_lm = [row for row in rows_for_totals(totals, "lead_month", "wind_direction")]
+    speed_lm = [row for row in rows_for_totals(totals, "lead_month", "wind_speed", daily_cc)]
+    direction_lm = [row for row in rows_for_totals(totals, "lead_month", "wind_direction", daily_cc)]
     write_csv(args.data_root / "wind_speed_metrics_by_lead_month.csv", speed_lm)
     write_csv(args.data_root / "wind_direction_metrics_by_lead_month.csv", direction_lm)
-    write_csv(args.data_root / "wind_speed_metrics_by_lead.csv", aggregate(totals, "lead", "wind_speed"))
-    write_csv(args.data_root / "wind_direction_metrics_by_lead.csv", aggregate(totals, "lead", "wind_direction"))
-    write_csv(args.data_root / "wind_speed_metrics_by_month.csv", aggregate(totals, "month", "wind_speed"))
-    write_csv(args.data_root / "wind_direction_metrics_by_month.csv", aggregate(totals, "month", "wind_direction"))
+    write_csv(args.data_root / "wind_speed_metrics_by_lead.csv", aggregate(totals, "lead", "wind_speed", daily_cc))
+    write_csv(args.data_root / "wind_direction_metrics_by_lead.csv", aggregate(totals, "lead", "wind_direction", daily_cc))
+    write_csv(args.data_root / "wind_speed_metrics_by_month.csv", aggregate(totals, "month", "wind_speed", daily_cc))
+    write_csv(args.data_root / "wind_direction_metrics_by_month.csv", aggregate(totals, "month", "wind_direction", daily_cc))
+    write_csv(args.data_root / "daily_cc_by_target.csv", daily_cc_rows)
+    write_csv(args.data_root / "daily_metrics_by_target.csv", daily_cc_rows)
     write_csv(args.data_root / "missing_outputs.csv", missing)
     summary = {
         "area": AREA,
@@ -476,7 +540,14 @@ def save_results(args, totals, missing, info):
         "start_date": args.start_date.strftime("%Y-%m-%d"),
         "end_date": args.end_date.strftime("%Y-%m-%d"),
         "observation_policy": "ICOADS manifest kind=updated and format=nc only; preliminary and DAT.GZ excluded; Natural Earth 10m land/lake mask applied",
-        "area_policy": "latitude 10..30 N, longitude 105..130 E",
+        "area_policy": "latitude 13..42 N, longitude 103..130 E",
+        "aggregation_method": "daily_arithmetic_mean",
+        "rmse_policy": "Arithmetic mean of per-target-day RMSE at each lead; take the square root within each day before averaging, with equal day weights",
+        "mae_policy": "Arithmetic mean of per-target-day MAE at each lead, with equal day weights",
+        "cc_policy": "Wind-speed and wind-direction CC are arithmetic means of valid per-target-day CC values, with equal day weights",
+        "daily_count_policy": "RMSE/MAE require at least one finite observation pair; CC requires at least two pairs and a defined correlation. Each metric excludes only its own nonfinite daily values. n remains the total observation-pair count",
+        "monthly_policy": "Month is the valid-time month. Monthly-by-lead outputs average daily values at that lead; by-month outputs average all valid daily lead cases within the month",
+        "cc_daily_count_policy": "cc_daily_count counts valid target-day CC values in each output grouping; daily CC requires at least two valid records and nonzero variance",
         "info": info,
         "missing_outputs": len(missing),
         "created_at": datetime.now().astimezone().isoformat(),
@@ -499,9 +570,9 @@ def main(argv=None):
     if args.end_date < args.start_date or args.workers < 1:
         parser.error("invalid date range or worker count")
     started = time.perf_counter()
-    totals, missing, info = run_statistics(args)
+    totals, missing, info, daily_cc, daily_cc_rows = run_statistics(args)
     info["elapsed_seconds"] = round(time.perf_counter() - started, 2)
-    save_results(args, totals, missing, info)
+    save_results(args, totals, missing, info, daily_cc, daily_cc_rows)
     return 0
 
 

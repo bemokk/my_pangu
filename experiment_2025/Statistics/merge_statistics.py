@@ -14,6 +14,8 @@ FILES = (
     "wind_direction_metrics_by_lead.csv",
     "wind_speed_metrics_by_month.csv",
     "wind_direction_metrics_by_month.csv",
+    "daily_cc_by_target.csv",
+    "daily_metrics_by_target.csv",
     "missing_outputs.csv",
 )
 
@@ -58,6 +60,12 @@ def main(argv=None):
         path = part / "run_summary.json"
         if path.is_file():
             summaries.append(json.loads(path.read_text(encoding="utf-8")))
+    areas = {tuple(item.get("area", [])) for item in summaries if item.get("area") is not None}
+    if len(areas) > 1:
+        raise SystemExit(
+            "Per-experiment summaries use different AREA values; "
+            "rerun all parts before merging: " + ", ".join(map(str, sorted(areas)))
+        )
     summary = {
         "parts": [path.name for path in parts],
         "experiments": [item for item in summaries for item in item.get("experiments", [])],

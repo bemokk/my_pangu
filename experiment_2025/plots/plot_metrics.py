@@ -17,11 +17,12 @@ DEFAULT_OUTPUT_ROOT = Path(__file__).resolve().parent / "figures"
 
 EXPERIMENTS = (
     ("era5_direct", "E0", "#43A3EF"),
-    ("era5_lagged_120h", "E120", "#FEA040"),
-    ("gdas_direct", "G0", "#009E73"),
+    ("era5_lagged_120h", "E120", "#009E73"),
+    ("gdas_direct", "G0", "#FEA040"),
     ("gdas_lagged_120h", "G120", "#EF767B"),
 )
 PANELS = (("rmse", "RMSE"), ("mae", "MAE"), ("cc", "CC"))
+VARIABLE_LABELS = {"wind_speed": "Wind speed", "wind_direction": "Wind direction"}
 
 
 def load_metrics(path: Path) -> pd.DataFrame:
@@ -76,12 +77,16 @@ def plot_metrics(frame: pd.DataFrame, variable: str, title: str, output_root: Pa
         for spine in ax.spines.values():
             spine.set_linewidth(0.75)
             spine.set_color("#606060")
-        ax.text(0.006, 0.98, f"({chr(ord('a') + index)})", transform=ax.transAxes,
-                ha="left", va="top", fontsize=9)
+        ax.text(-0.035, 1.02, f"({chr(ord('a') + index)})", transform=ax.transAxes,
+                ha="left", va="bottom", fontsize=9, clip_on=False)
         if metric == "cc":
             lo = float(frame[metric].min())
             hi = float(frame[metric].max())
-            ax.set_ylim(max(0.0, min(0.45, lo - 0.03)), min(1.0, max(0.9, hi + 0.03)))
+            if lo < 0.0:
+                lower = max(-1.0, lo - 0.03)
+            else:
+                lower = max(0.0, min(0.45, lo - 0.03))
+            ax.set_ylim(lower, min(1.0, max(0.9, hi + 0.03)))
 
     axes[0].legend(
         loc="upper left",
@@ -108,15 +113,98 @@ def plot_metrics(frame: pd.DataFrame, variable: str, title: str, output_root: Pa
     return outputs
 
 
+def plot_combined_metrics(
+    speed_frame: pd.DataFrame,
+    direction_frame: pd.DataFrame,
+    output_root: Path,
+) -> list[Path]:
+    """Create one 2x3 figure containing the three speed and three direction panels."""
+    output_root.mkdir(parents=True, exist_ok=True)
+    frames = {"wind_speed": speed_frame, "wind_direction": direction_frame}
+    fig, axes = plt.subplots(2, 3, figsize=(12.0, 7.4), sharex=True)
+    axes = axes.ravel()
+    panel_index = 0
+
+    for row, variable in enumerate(("wind_speed", "wind_direction")):
+        frame = frames[variable]
+        for col, (metric, metric_label) in enumerate(PANELS):
+            ax = axes[row * 3 + col]
+            for experiment, label, color in EXPERIMENTS:
+                subset = frame[frame["experiment"] == experiment].sort_values("lead_hour")
+                ax.plot(
+                    subset["lead_hour"],
+                    subset[metric],
+                    color=color,
+                    linewidth=1.15,
+                    marker="o",
+                    markersize=2.7,
+                    markeredgewidth=0.25,
+                    markeredgecolor="white",
+                    label=label,
+                )
+            ax.set_title(
+                f"({chr(ord('a') + panel_index)}) {VARIABLE_LABELS[variable]} {metric_label}",
+                loc="left",
+                fontsize=10,
+                pad=3,
+            )
+            ax.set_ylabel(y_label(metric, variable), fontsize=9)
+            ax.grid(True, linestyle=":", linewidth=0.7, color="#BFC4C8", alpha=0.65)
+            ax.set_axisbelow(True)
+            ax.tick_params(axis="both", labelsize=8, length=3, width=0.7, colors="#303030")
+            for spine in ax.spines.values():
+                spine.set_linewidth(0.75)
+                spine.set_color("#606060")
+            if metric == "cc":
+                lo = float(frame[metric].min())
+                hi = float(frame[metric].max())
+                lower = max(-1.0, lo - 0.03) if lo < 0.0 else max(0.0, min(0.45, lo - 0.03))
+                ax.set_ylim(lower, min(1.0, max(0.9, hi + 0.03)))
+            else:
+                hi = float(frame[metric].max())
+                ax.set_ylim(0.0, hi * 1.08 if hi > 0.0 else 1.0)
+            if row == 1:
+                ax.set_xlabel("Forecast lead time (h)", fontsize=9)
+            if row == 0:
+                ax.tick_params(axis="x", labelbottom=False)
+            panel_index += 1
+
+    axes[0].legend(
+        loc="upper left",
+        bbox_to_anchor=(0.015, 0.99),
+        ncol=2,
+        frameon=False,
+        fontsize=8,
+        handlelength=2.1,
+        columnspacing=1.2,
+        borderaxespad=0.0,
+    )
+    for ax in axes:
+        ax.set_xticks(list(range(0, 121, 12)))
+        ax.set_xlim(-2, 122)
+    fig.subplots_adjust(left=0.075, right=0.99, top=0.97, bottom=0.085, hspace=0.28, wspace=0.20)
+
+    stem = "wind_speed_wind_direction_metrics_by_lead"
+    outputs = [output_root / f"{stem}.png", output_root / f"{stem}.svg", output_root / f"{stem}.pdf"]
+    fig.savefig(outputs[0], dpi=300, facecolor="white")
+    fig.savefig(outputs[1], facecolor="white")
+    fig.savefig(outputs[2], dpi=300, facecolor="white")
+    plt.close(fig)
+    return outputs
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     args = parser.parse_args(argv)
     outputs = []
+    frames = {}
     for variable, title in (("wind_speed", "10 m wind speed"), ("wind_direction", "10 m wind direction")):
         frame = load_metrics(args.data_root / f"{variable}_metrics_by_lead.csv")
+        frames[variable] = frame
         outputs.extend(plot_metrics(frame, variable, title, args.output_root))
+    outputs.extend(plot_combined_metrics(frames["wind_speed"], frames["wind_direction"], args.output_root))
     print("Generated:")
     for path in outputs:
         print(path)
