@@ -70,3 +70,51 @@ python E:\PyCharm_WorkSpace\pangu\experiment_2025\Statistics\merge_statistics.py
 
 仅使用 `daily_updated`、区域 `[42, 103, 13, 130]` 和陆海掩膜。
 
+## 台风海洋站观测匹配
+
+`typhoon_station_wind_timeseries.py` 从原始海洋站 CSV/Excel 读取记录，完成时区转换、
+最近 3 h 有效时刻匹配，以及四组预报 u10/v10 的空间插值。这里只生成匹配数据和运行摘要，
+不调用绘图代码，也不导入 Matplotlib。
+
+```powershell
+python E:\pyCharmProject\pangu\experiment_2025\Statistics\typhoon_station_wind_timeseries.py `
+  --timezone-mode beijing `
+  --output-root H:\pangu_2025_data\model_output\experiment_2025
+```
+
+结果默认写入 `Statistics/data`：
+
+- `typhoon_station_wind_timeseries_2025_beijing.csv`：观测与四组预报的逐条匹配结果；
+- `typhoon_station_wind_timeseries_2025_summary.json`：案例范围、记录数、缺失输出和匹配时间差。
+
+可用 `--station-file`、`--output-root`、`--data-root` 分别指定原始站点文件、模式输出和统计结果目录。
+`--timezone-mode` 支持 `utc`、`beijing`、`both`，默认 `beijing`。
+使用 `utc` 或 `both` 时，也会写入 `*_utc.csv` 和历史 UTC 别名 `typhoon_station_wind_timeseries_2025.csv`。
+原始站点时间已确认是北京时间时，应显式使用 `--timezone-mode beijing`。
+
+案例按出现时间排列为韦帕—遮浪、范斯高—大陈、杨柳—北礵。
+站点、坐标、原始北京时间窗口及固定起报时刻集中在该统计脚本的 `CASES` 中。
+三例的固定目标起报分别为2025年7月18日00 UTC、7月24日00 UTC、8月12日00 UTC。
+后续日期的有效时刻仍从这一次目标起报取数，不再按有效日期切换起报目录。`lead_hour` 为模式实际目标时效；
+`plot_lead_hour` 为观测窗口内经过时间，两者不能混用。输出摘要明确记录这一口径。
+CSV 字段保持兼容，绘图脚本会按 CSV 中的“台风＋站点”组合自动组织子图。
+
+若本机只有旧匹配CSV，可使用 `select_typhoon_station_cases.py` 筛选三例及前72 h观察窗口：
+
+```powershell
+python E:\pyCharmProject\pangu\experiment_2025\Statistics\select_typhoon_station_cases.py `
+  --legacy-csv 'C:\path\typhoon_station_wind_timeseries_2025_beijing.csv' `
+  --additional-csv 'C:\path\two_typhoons_2025_station_wind_timeseries_beijing.csv'
+```
+
+输出为 `data/typhoon_three_cases_chronological_beijing.csv` 及对应摘要。
+`--require-fixed` 会拒绝与上述固定起报时刻不一致的记录；`--matched-csv` 可指定一份包含三例的新匹配CSV。
+筛选只保留原始匹配数值，不把多次起报的旧曲线改写成固定起报结果；图中会标出未通过固定起报核对的案例。
+
+绘图独立运行：
+
+```powershell
+python E:\pyCharmProject\pangu\experiment_2025\plots\plot_typhoon_station_wind_timeseries.py `
+  --timezone-mode beijing
+```
+

@@ -1,53 +1,30 @@
-"""Plot typhoon station wind observations and four Pangu experiments.
+"""Plot typhoon station winds from a previously matched CSV.
 
-The station workbook has no timezone metadata, so two independent matching
-interpretations are produced:
-
-* ``utc``: workbook timestamps are treated as UTC;
-* ``beijing``: workbook timestamps are treated as Beijing time and converted
-  to UTC by subtracting eight hours before looking up model output.
-
-The model output is available every three hours.  Station records are matched
-to the nearest available three-hour model valid time and that offset is stored
-in the matched CSV.  The plot x-axis is the elapsed hour from the beginning of
-each requested typhoon window.
+Raw station parsing, timezone conversion, NetCDF sampling and result summaries
+are handled by Statistics/typhoon_station_wind_timeseries.py. This program only
+reads matched CSV files and writes PNG/SVG/PDF figures. Cases and window start
+times are taken from the CSV, including multiple typhoons at the same station.
 """
 from __future__ import annotations
 
 import argparse
-import json
-import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 PLOTS_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = PLOTS_ROOT.parents[1]
-STATS_ROOT = PROJECT_ROOT / "experiment_2025" / "Statistics"
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-if str(STATS_ROOT) not in sys.path:
-    sys.path.insert(0, str(STATS_ROOT))
-
-DEFAULT_STATION_FILE = PROJECT_ROOT / "experiment_2025" / "icoads" / "2025_全部逐小时_风速风向_清洗.csv"
-DEFAULT_OUTPUT_ROOT = Path(r"H:\pangu_2025_data\model_output\experiment_2025")
 DEFAULT_DATA_ROOT = PROJECT_ROOT / "experiment_2025" / "Statistics" / "data"
 DEFAULT_FIGURES_ROOT = PLOTS_ROOT / "figures"
 
 EXPERIMENTS = ("era5_direct", "gdas_direct", "era5_lagged_120h", "gdas_lagged_120h")
-EXPERIMENT_LABELS = {
-    "era5_direct": "E0",
-    "gdas_direct": "G0",
-    "era5_lagged_120h": "E120",
-    "gdas_lagged_120h": "G120",
-}
+
 STYLES = {
     "observed": {"label": "观测", "color": "#333333", "linestyle": "-", "linewidth": 1.8},
     "era5_direct": {"label": "E0", "color": "#43A3EF", "linestyle": "-", "linewidth": 1.45},
@@ -56,180 +33,35 @@ STYLES = {
     "gdas_lagged_120h": {"label": "G120", "color": "#EF767B", "linestyle": "--", "linewidth": 1.45},
 }
 
-CASES = (
-    {
-        "typhoon": "丹娜丝 (Danas, 2025)",
-        "station": "大陈",
-        "lon": 121.9,
-        "lat": 28.5,
-        "start": datetime(2025, 7, 7),
-        "end": datetime(2025, 7, 10),
-    },
-    {
-        "typhoon": "韦帕 (Wipha, 2025)",
-        "station": "遮浪",
-        "lon": 115.6,
-        "lat": 22.7,
-        "start": datetime(2025, 7, 19),
-        "end": datetime(2025, 7, 22),
-    },
-    {
-        "typhoon": "竹节草 (Co-may, 2025)",
-        "station": "嵊山",
-        "lon": 122.8,
-        "lat": 30.8,
-        "start": datetime(2025, 7, 29),
-        "end": datetime(2025, 8, 1),
-    },
-)
+
+def validate_matched_data(frame: pd.DataFrame) -> None:
+    required = {
+        "typhoon", "station", "longitude", "latitude", "station_time_raw",
+        "station_time_utc", "plot_lead_hour", "obs_speed", "obs_direction",
+        *(f"{experiment}_{variable}" for experiment in EXPERIMENTS for variable in ("speed", "direction")),
+    }
+    missing = sorted(required.difference(frame.columns))
+    if missing:
+        raise ValueError(f"Matched CSV is missing columns: {', '.join(missing)}")
+    if frame.empty:
+        raise ValueError("Matched CSV contains no station records")
+    for column in ("typhoon", "station", "longitude", "latitude", "plot_lead_hour"):
+        if frame[column].isna().any():
+            raise ValueError(f"Matched CSV contains missing values in {column}")
+    if not np.isfinite(frame["plot_lead_hour"].to_numpy(float)).all():
+        raise ValueError("Matched CSV contains nonfinite elapsed hours")
 
 
-def _find_column(columns: list[str], *tokens: str) -> str:
-    for column in columns:
-        if all(token in column for token in tokens):
-            return column
-    raise KeyError(f"Cannot find column containing {tokens!r}; available={columns!r}")
-
-
-def load_station_data(path: Path) -> pd.DataFrame:
-    if path.suffix.lower() == ".csv":
-        try:
-            frame = pd.read_csv(path, encoding="utf-8-sig")
-        except UnicodeDecodeError:
-            frame = pd.read_csv(path, encoding="gb18030")
-    else:
-        frame = pd.read_excel(path)
-    columns = [str(column).strip() for column in frame.columns]
-    frame.columns = columns
-    time_col = _find_column(columns, "时")
-    station_col = _find_column(columns, "站")
-    lon_col = _find_column(columns, "经")
-    lat_col = _find_column(columns, "纬")
-    speed_col = _find_column(columns, "风速")
-    direction_col = _find_column(columns, "风向")
-    frame = frame.rename(
-        columns={
-            time_col: "station_time_raw",
-            station_col: "station",
-            lon_col: "longitude",
-            lat_col: "latitude",
-            speed_col: "obs_speed",
-            direction_col: "obs_direction",
-        }
-    )
-    frame["station_time_raw"] = pd.to_datetime(frame["station_time_raw"], errors="coerce")
-    for column in ("longitude", "latitude", "obs_speed", "obs_direction"):
-        frame[column] = pd.to_numeric(frame[column], errors="coerce")
-    frame["station"] = frame["station"].astype(str).str.strip()
-    frame = frame.dropna(
-        subset=["station_time_raw", "station", "longitude", "latitude", "obs_speed", "obs_direction"]
-    ).copy()
-    return frame.sort_values(["station", "station_time_raw"]).reset_index(drop=True)
-
-
-def _target_and_lead(valid_time: datetime) -> tuple[datetime, int]:
-    target_time = valid_time.replace(hour=0, minute=0, second=0, microsecond=0)
-    lead_hour = int((valid_time - target_time).total_seconds() // 3600)
-    if lead_hour < 0 or lead_hour > 120 or lead_hour % 3:
-        raise ValueError(f"Station timestamp does not map to a 3-hour model lead: {valid_time}")
-    return target_time, lead_hour
-
-
-def _nearest_model_time(valid_time_utc: datetime) -> tuple[datetime, float]:
-    """Return the nearest 3-hour model valid time and offset in hours."""
-    day_start = valid_time_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-    elapsed_hours = (valid_time_utc - day_start).total_seconds() / 3600.0
-    lower_hour = int(np.floor(elapsed_hours / 3.0) * 3)
-    lower = day_start + timedelta(hours=lower_hour)
-    upper = lower + timedelta(hours=3)
-    candidates = (lower, upper)
-    model_time = min(candidates, key=lambda item: abs((item - valid_time_utc).total_seconds()))
-    offset_hours = (model_time - valid_time_utc).total_seconds() / 3600.0
-    return model_time, offset_hours
-
-
-def match_model_data(
-    station_data: pd.DataFrame,
-    output_root: Path,
-    timezone_mode: str,
-) -> tuple[pd.DataFrame, list[dict]]:
-    # Import the NetCDF/statistics stack only for matching.  This keeps
-    # ``--plot-only`` usable in a lightweight plotting environment.
-    from experiment_2025.Statistics.statistics import GridSampler, model_path, wind_direction
-
-    first_path = model_path(output_root, "era5_direct", CASES[0]["start"], 0)
-    if not first_path.exists():
-        raise FileNotFoundError(f"Cannot initialize model grid sampler; missing {first_path}")
-    sampler = GridSampler(first_path, [42.0, 103.0, 13.0, 130.0])
-    if timezone_mode not in {"utc", "beijing"}:
-        raise ValueError(f"Unsupported timezone mode: {timezone_mode}")
-    rows: list[dict] = []
-    missing: list[dict] = []
-
-    for case in CASES:
-        selected = station_data[
-            (station_data["station"] == case["station"])
-            & (station_data["station_time_raw"] >= pd.Timestamp(case["start"]))
-            & (station_data["station_time_raw"] <= pd.Timestamp(case["end"]))
-        ].copy()
-        if selected.empty:
-            raise ValueError(f"No station records found for {case['station']} in requested window")
-        for record in selected.itertuples(index=False):
-            station_time_raw = record.station_time_raw.to_pydatetime()
-            if timezone_mode == "beijing":
-                station_time_utc = station_time_raw - timedelta(hours=8)
-            else:
-                station_time_utc = station_time_raw
-            model_valid_time_utc, match_offset_hours = _nearest_model_time(station_time_utc)
-            target_time, lead_hour = _target_and_lead(model_valid_time_utc)
-            case_start_utc = case["start"] - timedelta(hours=8) if timezone_mode == "beijing" else case["start"]
-            plot_lead_hour = (station_time_utc - case_start_utc).total_seconds() / 3600.0
-            row = {
-                "typhoon": case["typhoon"],
-                "station": case["station"],
-                "longitude": case["lon"],
-                "latitude": case["lat"],
-                "station_time_raw": station_time_raw.strftime("%Y-%m-%d %H:%M"),
-                "station_time_utc": station_time_utc.strftime("%Y-%m-%d %H:%M"),
-                "model_valid_time_utc": model_valid_time_utc.strftime("%Y-%m-%d %H:%M"),
-                "match_offset_hours": float(match_offset_hours),
-                "plot_lead_hour": float(plot_lead_hour),
-                "target_time_utc": target_time.strftime("%Y-%m-%d %H:%M"),
-                "lead_hour": lead_hour,
-                "obs_speed": float(record.obs_speed),
-                "obs_direction": float(record.obs_direction),
-            }
-            for experiment in EXPERIMENTS:
-                path = model_path(output_root, experiment, target_time, lead_hour)
-                if not path.is_file():
-                    missing.append(
-                        {
-                            "experiment": experiment,
-                            "station": case["station"],
-                            "timezone_mode": timezone_mode,
-                            "station_time_raw": station_time_raw.strftime("%Y-%m-%d %H:%M"),
-                            "station_time_utc": station_time_utc.strftime("%Y-%m-%d %H:%M"),
-                            "model_valid_time_utc": model_valid_time_utc.strftime("%Y-%m-%d %H:%M"),
-                            "match_offset_hours": float(match_offset_hours),
-                            "target_time_utc": target_time.strftime("%Y-%m-%d %H:%M"),
-                            "lead_hour": lead_hour,
-                            "path": str(path),
-                        }
-                    )
-                    row[f"{experiment}_speed"] = np.nan
-                    row[f"{experiment}_direction"] = np.nan
-                    continue
-                pred_u, pred_v = sampler.sample(
-                    path,
-                    np.asarray([case["lat"]], dtype=float),
-                    np.asarray([case["lon"]], dtype=float),
-                )
-                u = float(pred_u[0])
-                v = float(pred_v[0])
-                row[f"{experiment}_speed"] = float(np.hypot(u, v))
-                row[f"{experiment}_direction"] = float(wind_direction(np.asarray([u]), np.asarray([v]))[0])
-            rows.append(row)
-    return pd.DataFrame(rows), missing
+def infer_timezone_mode(frame: pd.DataFrame) -> str:
+    """Read the recorded time offset without re-matching any observations."""
+    raw = pd.to_datetime(frame["station_time_raw"], errors="raise")
+    utc = pd.to_datetime(frame["station_time_utc"], errors="raise")
+    offsets = (raw - utc).dt.total_seconds().to_numpy() / 3600.0
+    if np.all(np.isclose(offsets, 8.0)):
+        return "beijing"
+    if np.all(np.isclose(offsets, 0.0)):
+        return "utc"
+    raise ValueError("Matched CSV must use one consistent UTC or Beijing time interpretation")
 
 
 def _break_direction_wrap(values: np.ndarray) -> np.ndarray:
@@ -237,6 +69,21 @@ def _break_direction_wrap(values: np.ndarray) -> np.ndarray:
     jumps = np.abs(np.diff(values)) > 180.0
     values[1:][jumps] = np.nan
     return values
+
+
+def _initialization_label(frame: pd.DataFrame) -> str:
+    if "target_time_utc" not in frame:
+        return ""
+    targets = pd.to_datetime(frame["target_time_utc"], errors="raise")
+    if "expected_target_time_utc" in frame:
+        expected = pd.to_datetime(frame["expected_target_time_utc"], errors="raise")
+        if expected.nunique() != 1:
+            raise ValueError("One fixed target time is required for each selected case")
+        if not targets.eq(expected).all():
+            return f"【预览】{expected.iloc[0]:%m-%d %H:%M} UTC固定起报数据待更新"
+    if targets.nunique() == 1:
+        return f"固定起报：{targets.iloc[0]:%Y-%m-%d %H:%M} UTC"
+    return "现有CSV包含多次起报"
 
 
 def _configure_axes(ax, direction: bool, lead_hours: np.ndarray, start_date_utc: datetime) -> None:
@@ -247,7 +94,7 @@ def _configure_axes(ax, direction: bool, lead_hours: np.ndarray, start_date_utc:
     ax.set_xlim(-2.5, float(np.nanmax(lead_hours)))
     max_lead = int(np.ceil(np.nanmax(lead_hours) / 12.0) * 12)
     ticks = np.arange(0, max_lead + 1, 12, dtype=float)
-    labels = [f"0\n{start_date_utc:%Y-%m-%d}"] + [f"{int(tick)}h" for tick in ticks[1:]]
+    labels = [f"0\n{start_date_utc:%Y-%m-%d %H:%M} UTC"] + [f"{int(tick)}h" for tick in ticks[1:]]
     ax.set_xticks(ticks)
     ax.set_xticklabels(labels)
     ax.tick_params(axis="x", labelsize=8, pad=2)
@@ -256,7 +103,8 @@ def _configure_axes(ax, direction: bool, lead_hours: np.ndarray, start_date_utc:
         ax.set_yticks([0, 90, 180, 270, 360])
         ax.set_ylabel("风向 (°)")
     else:
-        ax.set_ylabel("风速 (m s$^{-1}$)")
+        # Keep Chinese outside Matplotlib's math-text font selection.
+        ax.set_ylabel("风速 (m·s⁻¹)")
     for label in ax.get_xticklabels():
         label.set_rotation(0)
     for spine in ax.spines.values():
@@ -264,29 +112,54 @@ def _configure_axes(ax, direction: bool, lead_hours: np.ndarray, start_date_utc:
         spine.set_linewidth(0.8)
 
 
-def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path) -> Path:
+def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path,
+                output_stem="typhoon_station_wind_timeseries", speed_max=None,
+                title=None) -> Path:
+    validate_matched_data(frame)
+    actual_mode = infer_timezone_mode(frame)
+    if timezone_mode != actual_mode:
+        raise ValueError(f"Requested timezone mode {timezone_mode!r} differs from CSV {actual_mode!r}")
+    groups = list(frame.groupby(["typhoon", "station"], sort=False))
+    prepared = []
+    for (typhoon, station), sub in groups:
+        sub = sub.sort_values("plot_lead_hour", kind="stable").copy()
+        starts = pd.to_datetime(sub["station_time_utc"], errors="raise") - pd.to_timedelta(sub["plot_lead_hour"], unit="h")
+        if starts.isna().any() or starts.nunique() != 1:
+            raise ValueError(f"Inconsistent window start in matched CSV for {typhoon}, {station}")
+        prepared.append((typhoon, station, sub, starts.iloc[0].to_pydatetime()))
+    prepared.sort(key=lambda item: (item[3], item[0], item[1]))
     figures_root.mkdir(parents=True, exist_ok=True)
-    timezone_label = "UTC" if timezone_mode == "utc" else "北京时间 (UTC+8)"
-    fig, axes = plt.subplots(3, 2, figsize=(13.0, 10.5), sharex=False, constrained_layout=False)
-    panel_letters = iter("abcdef")
+    timezone_label = "观测原始时间为UTC" if timezone_mode == "utc" else "观测原始时间为北京时间，已转换为UTC"
+    figure_height = 3.5 * len(groups)
+    fig, axes = plt.subplots(len(groups), 2, figsize=(13.0, figure_height),
+                             sharex=False, squeeze=False, constrained_layout=False)
 
-    for row_index, case in enumerate(CASES):
-        sub = frame[frame["station"] == case["station"]].copy()
+    for row_index, (typhoon, station, sub, start_date_utc) in enumerate(prepared):
         lead_hours = sub["plot_lead_hour"].to_numpy(float)
-        start_date_utc = case["start"] - timedelta(hours=8) if timezone_mode == "beijing" else case["start"]
+        case = {"typhoon": typhoon, "station": station, "lon": sub["longitude"].iloc[0], "lat": sub["latitude"].iloc[0]}
         speed_ax, direction_ax = axes[row_index]
         for ax, direction in ((speed_ax, False), (direction_ax, True)):
             _configure_axes(ax, direction, lead_hours, start_date_utc)
+        if speed_max is not None:
+            if not np.isfinite(speed_max) or speed_max <= 0:
+                raise ValueError("speed_max must be a positive finite number")
+            speed_ax.set_ylim(0, speed_max)
 
+        initialization = _initialization_label(sub)
+        speed_title = (
+            f"({chr(97 + row_index * 2)}) {case['typhoon']} · {case['station']}站 "
+            f"({case['lon']:.1f}°E, {case['lat']:.1f}°N) 风速"
+        )
+        if initialization:
+            speed_title += "\n" + initialization
         speed_ax.set_title(
-            f"({next(panel_letters)}) {case['typhoon']} · {case['station']}站 "
-            f"({case['lon']:.1f}°E, {case['lat']:.1f}°N) 风速",
+            speed_title,
             loc="left",
             fontweight="bold",
-            fontsize=11,
+            fontsize=10 if initialization else 11,
         )
         direction_ax.set_title(
-            f"({next(panel_letters)}) {case['typhoon']} · {case['station']}站 风向",
+            f"({chr(98 + row_index * 2)}) {case['typhoon']} · {case['station']}站 风向",
             loc="left",
             fontweight="bold",
             fontsize=11,
@@ -311,22 +184,24 @@ def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path) -> 
                 label=style["label"],
                 **{k: style[k] for k in ("color", "linestyle", "linewidth")},
             )
-        if row_index == len(CASES) - 1:
-            speed_ax.set_xlabel("预报时效")
-            direction_ax.set_xlabel("预报时效")
+        if row_index == len(groups) - 1:
+            speed_ax.set_xlabel("窗口经过时间（h）")
+            direction_ax.set_xlabel("窗口经过时间（h）")
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.945), ncol=5, frameon=True)
+    fig.legend(handles, labels, loc="upper center",
+               bbox_to_anchor=(0.5, 1 - 0.5775 / figure_height), ncol=5, frameon=True)
     fig.suptitle(
-        f"2025年台风海洋站10 m风场对比（{timezone_label}）\n"
+        (title or f"2025年台风海洋站10 m风场对比（{timezone_label}）") + "\n"
         "E0、G0为实线；E120、G120为虚线",
         fontsize=14,
-        y=0.995,
+        y=1 - 0.0525 / figure_height,
     )
     # Avoid bbox/tight-layout font measurement crashes on some Windows
     # Matplotlib builds with mixed Chinese and fallback fonts.
-    fig.subplots_adjust(left=0.065, right=0.985, bottom=0.075, top=0.88, hspace=0.42, wspace=0.18)
-    stem = figures_root / f"typhoon_station_wind_timeseries_{timezone_mode}"
+    fig.subplots_adjust(left=0.065, right=0.985, bottom=0.7875 / figure_height,
+                        top=1 - 1.26 / figure_height, hspace=0.42, wspace=0.18)
+    stem = figures_root / f"{output_stem}_{timezone_mode}"
     output = stem.with_suffix(".png")
     fig.savefig(output, dpi=300)
     fig.savefig(stem.with_suffix(".svg"))
@@ -337,90 +212,47 @@ def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path) -> 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--station-file", type=Path, default=DEFAULT_STATION_FILE)
-    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
     parser.add_argument("--figures-root", type=Path, default=DEFAULT_FIGURES_ROOT)
-    parser.add_argument("--match-only", action="store_true", help="match the station/model data without drawing figures")
-    parser.add_argument("--plot-only", action="store_true", help="draw figures from --matched-csv")
     parser.add_argument("--matched-csv", type=Path, default=None)
-    parser.add_argument("--timezone-mode", choices=("utc", "beijing"), default=None)
+    parser.add_argument("--output-stem", default="typhoon_station_wind_timeseries")
+    parser.add_argument("--speed-max", type=float, default=None,
+                        help="optional common upper wind-speed limit in m/s")
+    parser.add_argument("--title", default=None)
+    parser.add_argument("--timezone-mode", choices=("utc", "beijing", "both"), default=None,
+                        help="select matched CSVs; defaults to Beijing, or is inferred for --matched-csv")
+    parser.add_argument("--plot-only", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if args.matched_csv is not None and args.timezone_mode == "both":
+        parser.error("--matched-csv selects one CSV; choose utc or beijing, or omit --timezone-mode")
 
-    plt.rcParams.update(
-        {
-            "font.family": ["Times New Roman", "SimSun", "Microsoft YaHei", "DejaVu Serif"],
-            "font.size": 10,
-            "axes.unicode_minus": False,
-            "figure.facecolor": "white",
-            "axes.facecolor": "white",
-            "savefig.facecolor": "white",
-        }
-    )
-    # Plot-only mode is useful in environments where NetCDF dependencies are
-    # unavailable.  The CSV must have been created by a matching run.
-    if args.plot_only:
-        if args.matched_csv is None:
-            raise ValueError("--plot-only requires --matched-csv")
-        mode = args.timezone_mode or "utc"
-        matched = pd.read_csv(args.matched_csv)
-        output = plot_figure(matched, mode, args.figures_root)
+    plt.rcParams.update({
+        "font.family": ["Times New Roman", "SimSun", "Microsoft YaHei", "DejaVu Serif"],
+        "font.size": 10,
+        "axes.unicode_minus": False,
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "savefig.facecolor": "white",
+        "svg.fonttype": "none",
+        "pdf.fonttype": 42,
+    })
+    if args.matched_csv is not None:
+        inputs = [(args.matched_csv, args.timezone_mode)]
+    else:
+        mode = args.timezone_mode or "beijing"
+        modes = ("utc", "beijing") if mode == "both" else (mode,)
+        inputs = [(args.data_root / f"typhoon_station_wind_timeseries_2025_{mode}.csv", mode) for mode in modes]
+    for csv_path, mode in inputs:
+        if not csv_path.is_file():
+            raise FileNotFoundError(
+                f"Matched CSV not found: {csv_path}. "
+                "Run experiment_2025/Statistics/typhoon_station_wind_timeseries.py first."
+            )
+        frame = pd.read_csv(csv_path)
+        validate_matched_data(frame)
+        output = plot_figure(frame, mode or infer_timezone_mode(frame), args.figures_root,
+                             args.output_stem, args.speed_max, args.title)
         print(f"Figure: {output}")
-        return 0
-
-    station_data = load_station_data(args.station_file)
-    args.data_root.mkdir(parents=True, exist_ok=True)
-    summary = {
-        "station_file": str(args.station_file),
-        "model_output_root": str(args.output_root),
-        "time_interpretation": {
-            "utc": "Workbook timestamps are used directly as UTC model-valid times.",
-            "beijing": "Workbook timestamps are treated as Beijing time; 8 hours are subtracted before model lookup. Because model output is every 3 hours, the nearest valid model time is used and match_offset_hours is recorded.",
-        },
-        "experiments": list(EXPERIMENTS),
-        "modes": {},
-    }
-    utc_frame = None
-    for mode in ("utc", "beijing"):
-        matched, missing = match_model_data(station_data, args.output_root, mode)
-        if mode == "utc":
-            utc_frame = matched.copy()
-        csv_path = args.data_root / f"typhoon_station_wind_timeseries_2025_{mode}.csv"
-        matched.to_csv(csv_path, index=False, encoding="utf-8-sig")
-        summary["modes"][mode] = {
-            "csv": str(csv_path),
-            "cases": [
-                {
-                    "typhoon": case["typhoon"],
-                    "station": case["station"],
-                    "longitude": case["lon"],
-                    "latitude": case["lat"],
-                    "start": case["start"].strftime("%Y-%m-%d %H:%M"),
-                    "end": case["end"].strftime("%Y-%m-%d %H:%M"),
-                    "record_count": int((matched["station"] == case["station"]).sum()),
-                }
-                for case in CASES
-            ],
-            "missing_outputs": missing,
-            "matched_rows": int(len(matched)),
-            "match_offset_hours": sorted(matched["match_offset_hours"].unique().tolist()),
-        }
-        if not args.match_only:
-            plot_figure(matched, mode, args.figures_root)
-    # Keep the historical filename as a UTC-compatible alias, while the two
-    # explicit files above remain the authoritative timezone-specific outputs.
-    if utc_frame is not None:
-        utc_frame.to_csv(
-            args.data_root / "typhoon_station_wind_timeseries_2025.csv",
-            index=False,
-            encoding="utf-8-sig",
-        )
-    summary_path = args.data_root / "typhoon_station_wind_timeseries_2025_summary.json"
-    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Summary: {summary_path}")
-    for mode in ("utc", "beijing"):
-        mode_info = summary["modes"][mode]
-        print(f"{mode}: {mode_info['csv']}; missing outputs={len(mode_info['missing_outputs'])}")
     return 0
 
 

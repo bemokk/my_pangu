@@ -72,4 +72,43 @@ G120 #EF767B
   E:\PyCharm_WorkSpace\pangu\experiment_2025\plots\plot_wind_speed_beaufort_metrics.py
 ```
 
+## 台风海洋站风场对比
+
+`plot_typhoon_station_wind_timeseries.py` 只读取已经匹配好的 CSV，输出 PNG、SVG 和 PDF。
+原始观测读取、时区转换、NetCDF 插值及运行摘要已移至
+`Statistics/typhoon_station_wind_timeseries.py`，绘图不需要模式原始数据、NetCDF4 或 Cartopy。
+
+已有统计 CSV 时可直接绘图：
+
+```powershell
+python E:\pyCharmProject\pangu\experiment_2025\plots\plot_typhoon_station_wind_timeseries.py `
+  --matched-csv 'C:\path\typhoon_station_wind_timeseries_2025_beijing.csv' `
+  --figures-root 'C:\path\figures'
+```
+
+指定 `--matched-csv` 时，从CSV记录的原始时间与UTC时间差自动识别时区解释；若显式指定了不一致的
+`--timezone-mode`，会报错而不生成错误标注的图。旧命令中的 `--plot-only` 仍可使用，但已无需填写。
+
+默认读取 `Statistics/data/typhoon_station_wind_timeseries_2025_beijing.csv`，也可以用
+`--data-root` 指定统计目录，以 `--timezone-mode utc` 或 `both` 选择其他已匹配的CSV。
+默认输出为 `plots/figures/typhoon_station_wind_timeseries_beijing.*`。
+
+案例和站点从CSV自动识别，同一站点的不同台风分别绘制，并按UTC观测窗口开始时间排序。
+横轴为 `plot_lead_hour` 记录的窗口经过时间，零点日期与UTC时刻取自CSV，不再假定为固定起报预报时效。
+缺少CSV时，应先在有原始资料的机器上运行统计脚本；绘图入口不再接受
+`--station-file`、`--output-root` 或 `--match-only`。
+
+三例合并图可使用筛选后的CSV：
+
+```powershell
+python E:\pyCharmProject\pangu\experiment_2025\plots\plot_typhoon_station_wind_timeseries.py `
+  --matched-csv E:\pyCharmProject\pangu\experiment_2025\Statistics\data\typhoon_three_cases_chronological_beijing.csv `
+  --output-stem typhoon_three_cases_chronological --speed-max 30
+```
+
+`--output-stem` 指定文件名前缀，`--speed-max` 可统一各风速子图的纵轴上限。
+SVG文字可编辑，PDF嵌入TrueType字体。横轴为窗口经过时间，固定起报时刻在子图标题中单独标注。
+如果CSV含有 `expected_target_time_utc` 而实际起报字段不一致，对应案例会标记为预览、提示数据待更新，
+不能直接作为固定起报的正式预报图。
+
 
