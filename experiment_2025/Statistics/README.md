@@ -92,9 +92,11 @@ python E:\pyCharmProject\pangu\experiment_2025\Statistics\typhoon_station_wind_t
 使用 `utc` 或 `both` 时，也会写入 `*_utc.csv` 和历史 UTC 别名 `typhoon_station_wind_timeseries_2025.csv`。
 原始站点时间已确认是北京时间时，应显式使用 `--timezone-mode beijing`。
 
-案例按出现时间排列为韦帕—遮浪、范斯高—大陈、杨柳—北礵。
-站点、坐标、原始北京时间窗口及固定起报时刻集中在该统计脚本的 `CASES` 中。
-三例的固定目标起报分别为2025年7月18日00 UTC、7月24日00 UTC、8月12日00 UTC。
+合并图选取的案例按出现时间排列为韦帕—遮浪、范斯高—大陈、杨柳—东山。
+三例的固定目标起报分别为2025年7月19日00 UTC、7月24日00 UTC、8月12日00 UTC，
+由 `select_typhoon_station_cases.py` 的 `SELECTED_CASES` 核对。
+原始统计脚本的 `CASES` 保存丹娜丝、韦帕、竹节草的站点、坐标与北京时间窗口；
+范斯高和杨柳使用补充匹配CSV。
 后续日期的有效时刻仍从这一次目标起报取数，不再按有效日期切换起报目录。`lead_hour` 为模式实际目标时效；
 `plot_lead_hour` 为观测窗口内经过时间，两者不能混用。输出摘要明确记录这一口径。
 CSV 字段保持兼容，绘图脚本会按 CSV 中的“台风＋站点”组合自动组织子图。

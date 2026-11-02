@@ -15,6 +15,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 import numpy as np
 import pandas as pd
 
@@ -64,11 +65,71 @@ def infer_timezone_mode(frame: pd.DataFrame) -> str:
     raise ValueError("Matched CSV must use one consistent UTC or Beijing time interpretation")
 
 
-def _break_direction_wrap(values: np.ndarray) -> np.ndarray:
-    values = np.asarray(values, dtype=float).copy()
-    jumps = np.abs(np.diff(values)) > 180.0
-    values[1:][jumps] = np.nan
-    return values
+def _continuous_directions(series: list[np.ndarray]) -> list[np.ndarray]:
+    """Unwrap finite runs, then align their 360-degree branches across curves.
+
+    This changes only the displayed equivalent angle. Missing observations stay
+    missing, and no real point is removed to break a 0/360-degree crossing.
+    """
+    unwrapped = []
+    for values in series:
+        result = np.asarray(values, dtype=float).copy()
+        valid = np.flatnonzero(np.isfinite(result))
+        for run in np.split(valid, np.flatnonzero(np.diff(valid) > 1) + 1):
+            if len(run):
+                result[run] = np.rad2deg(np.unwrap(np.deg2rad(result[run])))
+        unwrapped.append(result)
+    reference = next((a[np.isfinite(a)] for a in unwrapped if np.isfinite(a).any()), None)
+    if reference is None:
+        return unwrapped
+    center = (reference.min() + reference.max()) / 2
+    for values in unwrapped:
+        valid = np.flatnonzero(np.isfinite(values))
+        for run in np.split(valid, np.flatnonzero(np.diff(valid) > 1) + 1):
+            if len(run):
+                midpoint = (values[run].min() + values[run].max()) / 2
+                values[run] += 360 * np.floor((center - midpoint) / 360 + 0.5)
+    finite = np.concatenate([a[np.isfinite(a)] for a in unwrapped])
+    if finite.max() - finite.min() > 360:
+        # Multiple rotations cannot fit continuously into one displayed cycle.
+        # Choose a common circular cut with the fewest discontinuities.
+        candidates = []
+        for lower in range(-180, 180, 30):
+            mapped = [lower + np.mod(np.asarray(a, dtype=float) - lower, 360) for a in series]
+            crossings = sum(np.count_nonzero(np.abs(np.diff(a)) > 180) for a in mapped)
+            candidates.append(((crossings, abs(lower), lower), mapped))
+        unwrapped = min(candidates, key=lambda item: item[0])[1]
+    return unwrapped
+
+
+def _direction_line(hours: np.ndarray, angles: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Insert a separator at a circular cut without removing either sample."""
+    crossings = np.flatnonzero(np.abs(np.diff(angles)) > 180) + 1
+    return np.insert(hours, crossings, np.nan), np.insert(angles, crossings, np.nan)
+
+
+def _data_limits(series: list[np.ndarray], nonnegative=False) -> tuple[float, float]:
+    values = np.concatenate([np.asarray(a, dtype=float) for a in series])
+    values = values[np.isfinite(values)]
+    if not len(values):
+        return (0.0, 1.0) if nonnegative else (0.0, 360.0)
+    low, high = float(values.min()), float(values.max())
+    padding = 0.05 * max(high - low, 1.0)
+    return max(0.0, low - padding) if nonnegative else low - padding, high + padding
+
+
+def _direction_limits(series: list[np.ndarray]) -> tuple[float, float]:
+    """Translate a fixed 360-degree window to contain all displayed angles."""
+    values = np.concatenate(series)
+    values = values[np.isfinite(values)]
+    if not len(values):
+        return 0.0, 360.0
+    low, high = float(values.min()), float(values.max())
+    if high - low > 360 + 1e-9:
+        raise ValueError("Continuous wind directions exceed a 360-degree display window")
+    centered_lower = (low + high) / 2 - 180
+    lower = float(np.clip(30 * np.round(centered_lower / 30), high - 360, low))
+    return lower, lower + 360
 
 
 def _initialization_label(frame: pd.DataFrame) -> str:
@@ -99,9 +160,8 @@ def _configure_axes(ax, direction: bool, lead_hours: np.ndarray, start_date_utc:
     ax.set_xticklabels(labels)
     ax.tick_params(axis="x", labelsize=8, pad=2)
     if direction:
-        ax.set_ylim(0, 360)
-        ax.set_yticks([0, 90, 180, 270, 360])
-        ax.set_ylabel("风向 (°)")
+        ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
+        ax.set_ylabel("风向 (°，展开值)")
     else:
         # Keep Chinese outside Matplotlib's math-text font selection.
         ax.set_ylabel("风速 (m·s⁻¹)")
@@ -175,12 +235,22 @@ def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path,
                 for experiment in EXPERIMENTS
             },
         }
-        for name, (speed, direction) in series.items():
+        direction_values = _continuous_directions([values[1] for values in series.values()])
+        if speed_max is None:
+            speed_ax.set_ylim(*_data_limits([values[0] for values in series.values()], nonnegative=True))
+        speed_ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
+        direction_lower, direction_upper = _direction_limits(direction_values)
+        direction_ax.set_ylim(direction_lower, direction_upper)
+        direction_ax.set_yticks(np.linspace(direction_lower, direction_upper, 7))
+        for (name, (speed, _)), direction in zip(series.items(), direction_values):
             style = STYLES[name]
             speed_ax.plot(lead_hours, speed, label=style["label"], **{k: style[k] for k in ("color", "linestyle", "linewidth")})
+            direction_hours, direction_line = _direction_line(lead_hours, direction)
             direction_ax.plot(
-                lead_hours,
-                _break_direction_wrap(direction),
+                direction_hours,
+                direction_line,
+                marker="." if len(direction_line) > len(direction) else None,
+                markersize=2,
                 label=style["label"],
                 **{k: style[k] for k in ("color", "linestyle", "linewidth")},
             )

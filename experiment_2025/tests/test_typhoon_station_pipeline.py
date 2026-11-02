@@ -164,9 +164,9 @@ def test_selection_preserves_values_and_detects_old_initialization():
     from experiment_2025.Statistics.select_typhoon_station_cases import select_cases
     records = []
     for case_number, (name, station, stamp) in enumerate([
-        ("韦帕", "遮浪", "2025-07-18"),
+        ("韦帕", "遮浪", "2025-07-19"),
         ("范斯高", "大陈", "2025-07-24"),
-        ("杨柳", "北礵", "2025-08-12"),
+        ("杨柳", "东山", "2025-08-12"),
     ]):
         target = pd.Timestamp(stamp)
         for hour in [0, 3, 72]:
@@ -179,7 +179,7 @@ def test_selection_preserves_values_and_detects_old_initialization():
                             "obs_speed": case_number + hour / 10})
     frame = pd.DataFrame(records)
     result, info = select_cases(frame.iloc[:3], frame.iloc[3:], require_fixed=True)
-    assert result["station"].drop_duplicates().tolist() == ["遮浪", "大陈", "北礵"]
+    assert result["station"].drop_duplicates().tolist() == ["遮浪", "大陈", "东山"]
     assert result["obs_speed"].tolist() == frame["obs_speed"].tolist()
     assert info["all_fixed_in_recorded_metadata"]
     old = frame.iloc[:3].copy()
@@ -200,3 +200,39 @@ def test_plot_marks_unverified_initialization_as_preview():
     frame["target_time_utc"] = "2025-07-18 00:00"
     assert "预览" not in _initialization_label(frame)
     assert "2025-07-18 00:00" in _initialization_label(frame)
+
+
+def test_direction_display_preserves_points_angles_and_missing_gaps():
+    from experiment_2025.plots.plot_typhoon_station_wind_timeseries import _continuous_directions
+    source = [np.array([350., 355., 2., 10.]),
+              np.array([10., 0., 355., 350.]),
+              np.array([350., np.nan, 5., 10.]),
+              np.full(4, np.nan)]
+    original = [a.copy() for a in source]
+    result = _continuous_directions(source)
+    for raw, shown, unchanged in zip(source, result, original):
+        np.testing.assert_array_equal(raw, unchanged)
+        np.testing.assert_array_equal(np.isnan(shown), np.isnan(raw))
+        valid = np.isfinite(raw)
+        np.testing.assert_allclose((shown[valid] - raw[valid]) / 360,
+                                   np.round((shown[valid] - raw[valid]) / 360), atol=1e-12)
+        adjacent = np.isfinite(shown[:-1]) & np.isfinite(shown[1:])
+        assert np.all(np.abs(np.diff(shown)[adjacent]) <= 180)
+    assert np.nanmax(np.concatenate(result)) - np.nanmin(np.concatenate(result)) < 30
+
+
+def test_multiple_rotations_fit_one_cycle_without_losing_samples():
+    from experiment_2025.plots.plot_typhoon_station_wind_timeseries import (
+        _continuous_directions, _direction_limits, _direction_line,
+    )
+    raw = np.array([0., 90., 180., 270., 0., 90., 180., 270., 0.])
+    hours = np.arange(len(raw), dtype=float)
+    shown = _continuous_directions([raw])[0]
+    lower, upper = _direction_limits([shown])
+    assert upper - lower == 360
+    assert lower <= shown.min() <= shown.max() <= upper
+    np.testing.assert_allclose((shown - raw) / 360, np.round((shown - raw) / 360))
+    x, y = _direction_line(hours, shown)
+    assert len(x) > len(hours)
+    np.testing.assert_array_equal(x[np.isfinite(x)], hours)
+    np.testing.assert_array_equal(y[np.isfinite(y)], shown)

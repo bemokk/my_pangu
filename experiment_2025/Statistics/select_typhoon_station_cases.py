@@ -17,9 +17,9 @@ import pandas as pd
 DEFAULT_DATA_ROOT = Path(__file__).resolve().parent / "data"
 OUTPUT_STEM = "typhoon_three_cases_chronological_beijing"
 SELECTED_CASES = (
-    ("韦帕", "韦帕 (Wipha, 2025)", "遮浪", "legacy", "2025-07-18 00:00"),
+    ("韦帕", "韦帕 (Wipha, 2025)", "遮浪", "legacy", "2025-07-19 00:00"),
     ("范斯高", "范斯高 (Francisco, 2025)", "大陈", "additional", "2025-07-24 00:00"),
-    ("杨柳", "杨柳 (Podul, 2025)", "北礵", "additional", "2025-08-12 00:00"),
+    ("杨柳", "杨柳 (Podul, 2025)", "东山", "additional", "2025-08-12 00:00"),
 )
 EXPERIMENTS = ("era5_direct", "gdas_direct", "era5_lagged_120h", "gdas_lagged_120h")
 

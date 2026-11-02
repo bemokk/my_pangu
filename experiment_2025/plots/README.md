@@ -103,10 +103,13 @@ python E:\pyCharmProject\pangu\experiment_2025\plots\plot_typhoon_station_wind_t
 ```powershell
 python E:\pyCharmProject\pangu\experiment_2025\plots\plot_typhoon_station_wind_timeseries.py `
   --matched-csv E:\pyCharmProject\pangu\experiment_2025\Statistics\data\typhoon_three_cases_chronological_beijing.csv `
-  --output-stem typhoon_three_cases_chronological --speed-max 30
+  --output-stem typhoon_three_cases_chronological
 ```
 
-`--output-stem` 指定文件名前缀，`--speed-max` 可统一各风速子图的纵轴上限。
+`--output-stem` 指定文件名前缀。默认各风速子图根据观测及四组预报的最小、最大值独立缩放并保留边距；
+可显式使用 `--speed-max` 统一风速上限。风向按360°周期连续展开、将各曲线按整周对齐后，纵轴始终保持360°跨度，只根据各案例的数值范围上下平移，
+保留所有有效点及原始缺测间断。风向纵轴为展开值，例如−90°与270°等价；原始CSV数值不变。
+若风向多次转过整周，则选择跨界次数最少的共同切分角，跨界处断开连线并用小点保留样本，避免画出虚假的整周跳变。
 SVG文字可编辑，PDF嵌入TrueType字体。横轴为窗口经过时间，固定起报时刻在子图标题中单独标注。
 如果CSV含有 `expected_target_time_utc` 而实际起报字段不一致，对应案例会标记为预览、提示数据待更新，
 不能直接作为固定起报的正式预报图。

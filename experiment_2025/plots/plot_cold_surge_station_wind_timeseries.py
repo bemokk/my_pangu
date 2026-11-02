@@ -29,6 +29,10 @@ if str(PROJECT_ROOT) not in sys.path:
 if str(STATS_ROOT) not in sys.path:
     sys.path.insert(0, str(STATS_ROOT))
 
+from experiment_2025.plots.plot_typhoon_station_wind_timeseries import (
+    _continuous_directions, _direction_limits, _direction_line,
+)
+
 DEFAULT_STATION_FILE = PROJECT_ROOT / "experiment_2025" / "icoads" / "2025_全部逐小时_风速风向_清洗.csv"
 DEFAULT_OUTPUT_ROOT = Path(r"H:\pangu_2025_data\model_output\experiment_2025")
 DEFAULT_DATA_ROOT = PROJECT_ROOT / "experiment_2025" / "Statistics" / "data"
@@ -142,15 +146,9 @@ def match_data(station_data: pd.DataFrame, output_root: Path, timezone_mode: str
     return pd.DataFrame(rows), missing
 
 
-def break_direction_wrap(values: np.ndarray) -> np.ndarray:
-    values = np.asarray(values, dtype=float).copy()
-    values[1:][np.abs(np.diff(values)) > 180.0] = np.nan
-    return values
-
-
 def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path) -> Path:
     figures_root.mkdir(parents=True, exist_ok=True)
-    timezone_label = "UTC假设" if timezone_mode == "utc" else "北京时间假设（转换为UTC匹配）"
+    timezone_label = "UTC匹配" if timezone_mode == "utc" else "北京时间转换为UTC匹配"
     fig, axes = plt.subplots(2, 2, figsize=(13, 7.8), sharex=True, constrained_layout=False)
     for row_index, case in enumerate(CASES):
         sub = frame[frame["station"] == case["station"]].sort_values("plot_lead_hour")
@@ -165,11 +163,9 @@ def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path) -> 
             ax.grid(True, color="#BFBFBF", linewidth=0.65, linestyle="--", alpha=0.7)
             ax.set_axisbelow(True)
             if direction:
-                ax.set_ylim(0, 360)
-                ax.set_yticks([0, 90, 180, 270, 360])
-                ax.set_ylabel("风向 (°)")
+                ax.set_ylabel("风向 (°，展开值)")
             else:
-                ax.set_ylabel("风速 (m s$^{-1}$)")
+                ax.set_ylabel("风速 (m·s⁻¹)")
             for spine in ax.spines.values():
                 spine.set_color("#444444")
                 spine.set_linewidth(0.8)
@@ -177,11 +173,18 @@ def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path) -> 
         direction_ax.set_title(f"({chr(98 + row_index * 2)}) {case['display']} 风向", loc="left", fontweight="bold", fontsize=11)
         series = {"observed": (sub["obs_speed"].to_numpy(float), sub["obs_direction"].to_numpy(float))}
         series.update({experiment: (sub[f"{experiment}_speed"].to_numpy(float), sub[f"{experiment}_direction"].to_numpy(float)) for experiment in EXPERIMENTS})
-        for name, (speed, direction) in series.items():
+        directions = _continuous_directions([values[1] for values in series.values()])
+        lower, upper = _direction_limits(directions)
+        direction_ax.set_ylim(lower, upper)
+        direction_ax.set_yticks(np.linspace(lower, upper, 7))
+        for (name, (speed, _)), direction in zip(series.items(), directions):
             style = STYLES[name]
             kwargs = {key: style[key] for key in ("color", "linestyle", "linewidth")}
             speed_ax.plot(x, speed, label=style["label"], **kwargs)
-            direction_ax.plot(x, break_direction_wrap(direction), label=style["label"], **kwargs)
+            direction_x, direction_y = _direction_line(x, direction)
+            direction_ax.plot(direction_x, direction_y, label=style["label"],
+                              marker="." if len(direction_y) > len(direction) else None,
+                              markersize=2, **kwargs)
         if row_index == 1:
             speed_ax.set_xlabel("预报时效")
             direction_ax.set_xlabel("预报时效")
@@ -214,7 +217,8 @@ def main(argv=None) -> int:
     parser.add_argument("--matched-csv", type=Path, default=None)
     parser.add_argument("--timezone-mode", choices=("utc", "beijing"), default="utc")
     args = parser.parse_args(argv)
-    plt.rcParams.update({"font.family": ["Times New Roman", "SimSun", "Microsoft YaHei", "DejaVu Serif"], "font.size": 10, "axes.unicode_minus": False})
+    plt.rcParams.update({"font.family": ["Times New Roman", "SimSun", "Microsoft YaHei", "DejaVu Serif"], "font.size": 10, "axes.unicode_minus": False,
+                         "svg.fonttype": "none", "pdf.fonttype": 42})
     if args.plot_only:
         if args.matched_csv is None:
             raise ValueError("--plot-only requires --matched-csv")
