@@ -9,6 +9,12 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+try:
+    from .publication_style import FONT_FAMILY, format_figure, set_style as set_publication_style
+except ImportError:
+    from publication_style import FONT_FAMILY, format_figure, set_style as set_publication_style
+set_publication_style()
+
 import numpy as np
 import pandas as pd
 
@@ -106,25 +112,13 @@ def plot(frame: pd.DataFrame, output_root: Path) -> list[Path]:
             panel = chr(ord("a") + row_index * len(leads) + col_index)
             ax.set_title(f"({panel}) {month_name}, {lead} h", y=1.12, fontsize=10, fontweight="bold")
 
-    handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(
-        handles,
-        labels,
-        loc="lower center",
-        bbox_to_anchor=(0.5, 0.005),
-        ncol=len(SERIES_ORDER),
-        frameon=True,
-        fontsize=10,
-        title="Series",
-        title_fontsize=10,
-    )
-    fig.suptitle("East China Sea 10 m wind-direction frequency", fontsize=13, y=0.985)
-    fig.tight_layout(rect=[0.02, 0.07, 0.98, 0.95], w_pad=1.5, h_pad=1.8)
+    fig.tight_layout(rect=[0.02, 0.02, 0.98, 0.88], w_pad=1.5, h_pad=1.8)
     stem = output_root / "east_china_sea_wind_direction_frequency_radar_january_august"
     outputs = [stem.with_suffix(".png"), stem.with_suffix(".svg"), stem.with_suffix(".pdf")]
-    fig.savefig(outputs[0], dpi=300, facecolor="white")
+    format_figure(fig)
+    fig.savefig(outputs[0], dpi=600, facecolor="white")
     fig.savefig(outputs[1], facecolor="white")
-    fig.savefig(outputs[2], dpi=300, facecolor="white")
+    fig.savefig(outputs[2], dpi=600, facecolor="white")
     plt.close(fig)
     return outputs
 

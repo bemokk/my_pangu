@@ -8,6 +8,12 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+try:
+    from .publication_style import FONT_FAMILY, format_figure, set_style as set_publication_style
+except ImportError:
+    from publication_style import FONT_FAMILY, format_figure, set_style as set_publication_style
+set_publication_style()
+
 import pandas as pd
 
 
@@ -101,14 +107,14 @@ def plot_metrics(frame: pd.DataFrame, variable: str, title: str, output_root: Pa
     axes[-1].set_xlabel("Forecast lead time (h)", fontsize=9)
     axes[-1].set_xticks(list(range(0, 121, 12)))
     axes[-1].set_xlim(-2, 122)
-    fig.suptitle(title, fontsize=11, y=0.995)
-    fig.subplots_adjust(left=0.105, right=0.985, top=0.94, bottom=0.085, hspace=0.18)
+    fig.subplots_adjust(left=0.105, right=0.985, top=0.97, bottom=0.085, hspace=0.18)
 
     stem = f"{variable}_metrics_by_lead"
     outputs = [output_root / f"{stem}.png", output_root / f"{stem}.svg", output_root / f"{stem}.pdf"]
-    fig.savefig(outputs[0], dpi=300, facecolor="white")
+    format_figure(fig)
+    fig.savefig(outputs[0], dpi=600, facecolor="white")
     fig.savefig(outputs[1], facecolor="white")
-    fig.savefig(outputs[2], dpi=300, facecolor="white")
+    fig.savefig(outputs[2], dpi=600, facecolor="white")
     plt.close(fig)
     return outputs
 
@@ -186,9 +192,10 @@ def plot_combined_metrics(
 
     stem = "wind_speed_wind_direction_metrics_by_lead"
     outputs = [output_root / f"{stem}.png", output_root / f"{stem}.svg", output_root / f"{stem}.pdf"]
-    fig.savefig(outputs[0], dpi=300, facecolor="white")
+    format_figure(fig)
+    fig.savefig(outputs[0], dpi=600, facecolor="white")
     fig.savefig(outputs[1], facecolor="white")
-    fig.savefig(outputs[2], dpi=300, facecolor="white")
+    fig.savefig(outputs[2], dpi=600, facecolor="white")
     plt.close(fig)
     return outputs
 

@@ -7,6 +7,12 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+try:
+    from .publication_style import FONT_FAMILY, format_figure, set_style as set_publication_style
+except ImportError:
+    from publication_style import FONT_FAMILY, format_figure, set_style as set_publication_style
+set_publication_style()
+
 import pandas as pd
 
 
@@ -32,7 +38,7 @@ def main() -> None:
 
     plt.rcParams.update(
         {
-            "font.family": ["Times New Roman", "SimSun", "Microsoft YaHei", "DejaVu Serif"],
+            "font.family": FONT_FAMILY,
             "font.size": 9,
             "axes.titlesize": 10,
             "axes.labelsize": 9,
@@ -44,7 +50,7 @@ def main() -> None:
             "figure.facecolor": "white",
             "axes.facecolor": "white",
             "savefig.facecolor": "white",
-            "savefig.dpi": 300,
+            "savefig.dpi": 600,
         }
     )
     fig, axes = plt.subplots(2, 4, figsize=(13.2, 6.8), sharex=True)
@@ -79,9 +85,10 @@ def main() -> None:
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     stem = "east_china_sea_wind_speed_metrics_by_season_2025"
     outputs = [FIGURES_DIR / f"{stem}.png", FIGURES_DIR / f"{stem}.svg", FIGURES_DIR / f"{stem}.pdf"]
-    fig.savefig(outputs[0], dpi=300, facecolor="white")
+    format_figure(fig)
+    fig.savefig(outputs[0], dpi=600, facecolor="white")
     fig.savefig(outputs[1], facecolor="white")
-    fig.savefig(outputs[2], dpi=300, facecolor="white")
+    fig.savefig(outputs[2], dpi=600, facecolor="white")
     plt.close(fig)
     for output in outputs:
         print(output)

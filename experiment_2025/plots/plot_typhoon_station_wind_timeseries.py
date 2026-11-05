@@ -15,6 +15,12 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+try:
+    from .publication_style import FONT_FAMILY, format_figure, set_style as set_publication_style
+except ImportError:
+    from publication_style import FONT_FAMILY, format_figure, set_style as set_publication_style
+set_publication_style()
+
 from matplotlib.ticker import MaxNLocator
 import numpy as np
 import pandas as pd
@@ -174,7 +180,8 @@ def _configure_axes(ax, direction: bool, lead_hours: np.ndarray, start_date_utc:
 
 def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path,
                 output_stem="typhoon_station_wind_timeseries", speed_max=None,
-                title=None) -> Path:
+                title=None, *, fig=None, axes=None, panel_offset=0,
+                show_initialization=True) -> Path:
     validate_matched_data(frame)
     actual_mode = infer_timezone_mode(frame)
     if timezone_mode != actual_mode:
@@ -191,8 +198,13 @@ def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path,
     figures_root.mkdir(parents=True, exist_ok=True)
     timezone_label = "观测原始时间为UTC" if timezone_mode == "utc" else "观测原始时间为北京时间，已转换为UTC"
     figure_height = 3.5 * len(groups)
-    fig, axes = plt.subplots(len(groups), 2, figsize=(13.0, figure_height),
-                             sharex=False, squeeze=False, constrained_layout=False)
+    embedded = fig is not None
+    if embedded:
+        if axes is None or np.shape(axes) != (len(groups), 2):
+            raise ValueError("Embedded time series require one pair of axes per case")
+    else:
+        fig, axes = plt.subplots(len(groups), 2, figsize=(13.0, figure_height),
+                                 sharex=False, squeeze=False, constrained_layout=False)
 
     for row_index, (typhoon, station, sub, start_date_utc) in enumerate(prepared):
         lead_hours = sub["plot_lead_hour"].to_numpy(float)
@@ -207,10 +219,10 @@ def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path,
 
         initialization = _initialization_label(sub)
         speed_title = (
-            f"({chr(97 + row_index * 2)}) {case['typhoon']} · {case['station']}站 "
+            f"({chr(97 + panel_offset + row_index * 2)}) {case['typhoon']} · {case['station']}站 "
             f"({case['lon']:.1f}°E, {case['lat']:.1f}°N) 风速"
         )
-        if initialization:
+        if initialization and show_initialization:
             speed_title += "\n" + initialization
         speed_ax.set_title(
             speed_title,
@@ -219,7 +231,7 @@ def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path,
             fontsize=10 if initialization else 11,
         )
         direction_ax.set_title(
-            f"({chr(98 + row_index * 2)}) {case['typhoon']} · {case['station']}站 风向",
+            f"({chr(98 + panel_offset + row_index * 2)}) {case['typhoon']} · {case['station']}站 风向",
             loc="left",
             fontweight="bold",
             fontsize=11,
@@ -258,24 +270,21 @@ def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path,
             speed_ax.set_xlabel("窗口经过时间（h）")
             direction_ax.set_xlabel("窗口经过时间（h）")
 
-    handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center",
-               bbox_to_anchor=(0.5, 1 - 0.5775 / figure_height), ncol=5, frameon=True)
-    fig.suptitle(
-        (title or f"2025年台风海洋站10 m风场对比（{timezone_label}）") + "\n"
-        "E0、G0为实线；E120、G120为虚线",
-        fontsize=14,
-        y=1 - 0.0525 / figure_height,
-    )
+    if embedded:
+        axes[0, 0].legend(loc="upper left", ncol=2, fontsize=8, frameon=True,
+                          facecolor="white", edgecolor="black", framealpha=1, fancybox=False)
+        return fig
+
     # Avoid bbox/tight-layout font measurement crashes on some Windows
     # Matplotlib builds with mixed Chinese and fallback fonts.
     fig.subplots_adjust(left=0.065, right=0.985, bottom=0.7875 / figure_height,
-                        top=1 - 1.26 / figure_height, hspace=0.42, wspace=0.18)
+                        top=1 - 0.60 / figure_height, hspace=0.42, wspace=0.18)
     stem = figures_root / f"{output_stem}_{timezone_mode}"
     output = stem.with_suffix(".png")
-    fig.savefig(output, dpi=300)
+    format_figure(fig)
+    fig.savefig(output, dpi=600)
     fig.savefig(stem.with_suffix(".svg"))
-    fig.savefig(stem.with_suffix(".pdf"), dpi=300)
+    fig.savefig(stem.with_suffix(".pdf"), dpi=600)
     plt.close(fig)
     return output
 
@@ -297,7 +306,7 @@ def main(argv=None) -> int:
         parser.error("--matched-csv selects one CSV; choose utc or beijing, or omit --timezone-mode")
 
     plt.rcParams.update({
-        "font.family": ["Times New Roman", "SimSun", "Microsoft YaHei", "DejaVu Serif"],
+        "font.family": FONT_FAMILY,
         "font.size": 10,
         "axes.unicode_minus": False,
         "figure.facecolor": "white",

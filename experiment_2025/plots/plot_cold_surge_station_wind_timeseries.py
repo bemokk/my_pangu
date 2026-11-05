@@ -18,6 +18,12 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+try:
+    from .publication_style import FONT_FAMILY, format_figure, set_style as set_publication_style
+except ImportError:
+    from publication_style import FONT_FAMILY, format_figure, set_style as set_publication_style
+set_publication_style()
+
 import numpy as np
 import pandas as pd
 
@@ -49,8 +55,8 @@ STYLES = {
     "gdas_lagged_120h": {"label": "G120", "color": "#EF767B", "linestyle": "--", "linewidth": 1.45},
 }
 CASES = (
-    {"station": "连云港", "display": "连云港", "lon": 119.4, "lat": 34.8},
-    {"station": "南麂", "display": "南麂岛", "lon": 121.1, "lat": 27.5},
+    {"station": "小麦岛", "display": "小麦岛", "lon": 120.4, "lat": 36.0},
+    {"station": "大陈", "display": "大陈", "lon": 121.9, "lat": 28.5},
 )
 
 
@@ -148,7 +154,6 @@ def match_data(station_data: pd.DataFrame, output_root: Path, timezone_mode: str
 
 def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path) -> Path:
     figures_root.mkdir(parents=True, exist_ok=True)
-    timezone_label = "UTC匹配" if timezone_mode == "utc" else "北京时间转换为UTC匹配"
     fig, axes = plt.subplots(2, 2, figsize=(13, 7.8), sharex=True, constrained_layout=False)
     for row_index, case in enumerate(CASES):
         sub = frame[frame["station"] == case["station"]].sort_values("plot_lead_hour")
@@ -189,19 +194,15 @@ def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path) -> 
             speed_ax.set_xlabel("预报时效")
             direction_ax.set_xlabel("预报时效")
     handles, labels_legend = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels_legend, loc="upper center", bbox_to_anchor=(0.5, 0.90), ncol=5, frameon=True)
-    fig.suptitle(
-        f"2025年2月5日寒潮海洋站10 m风场对比（{timezone_label}）\n"
-        "E0、G0：2025-02-05 00 UTC；E120、G120：2025-01-31 00 UTC起报",
-        fontsize=13,
-        y=0.995,
-    )
-    fig.subplots_adjust(left=0.065, right=0.985, bottom=0.09, top=0.80, hspace=0.38, wspace=0.18)
+    axes[0, 0].legend(handles, labels_legend, loc="upper left", ncol=2,
+                      frameon=True, framealpha=0.9, fontsize=9)
+    fig.subplots_adjust(left=0.065, right=0.985, bottom=0.09, top=0.95, hspace=0.38, wspace=0.18)
     stem = figures_root / f"cold_surge_2025_station_wind_timeseries_{timezone_mode}"
     output = stem.with_suffix(".png")
-    fig.savefig(output, dpi=300)
+    format_figure(fig)
+    fig.savefig(output, dpi=600)
     fig.savefig(stem.with_suffix(".svg"))
-    fig.savefig(stem.with_suffix(".pdf"), dpi=300)
+    fig.savefig(stem.with_suffix(".pdf"), dpi=600)
     plt.close(fig)
     return output
 
@@ -217,7 +218,7 @@ def main(argv=None) -> int:
     parser.add_argument("--matched-csv", type=Path, default=None)
     parser.add_argument("--timezone-mode", choices=("utc", "beijing"), default="utc")
     args = parser.parse_args(argv)
-    plt.rcParams.update({"font.family": ["Times New Roman", "SimSun", "Microsoft YaHei", "DejaVu Serif"], "font.size": 10, "axes.unicode_minus": False,
+    plt.rcParams.update({"font.family": FONT_FAMILY, "font.size": 10, "axes.unicode_minus": False,
                          "svg.fonttype": "none", "pdf.fonttype": 42})
     if args.plot_only:
         if args.matched_csv is None:

@@ -10,6 +10,12 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
+try:
+    from .publication_style import FONT_FAMILY, format_figure, set_style as set_publication_style
+except ImportError:
+    from publication_style import FONT_FAMILY, format_figure, set_style as set_publication_style
+set_publication_style()
+
 from matplotlib.path import Path as MplPath
 from matplotlib.patches import PathPatch
 import numpy as np
@@ -33,7 +39,16 @@ LAT_MAX, LON_MIN, LAT_MIN, LON_MAX = AREA
 
 def load_data(data_root: Path):
     grid = pd.read_csv(data_root / "icoads_2025_grid_counts_1deg.csv")
-    summary = json.loads((data_root / "icoads_distribution_run_summary.json").read_text(encoding="utf-8"))
+    summary_file = data_root / "icoads_distribution_run_summary.json"
+    if summary_file.exists():
+        summary = json.loads(summary_file.read_text(encoding="utf-8"))
+    else:
+        # The exported grid contains its own cell boundaries.
+        lat_sizes = grid["grid_lat_max"] - grid["grid_lat_min"]
+        lon_sizes = grid["grid_lon_max"] - grid["grid_lon_min"]
+        if not np.allclose(lat_sizes, lat_sizes.iloc[0]) or not np.allclose(lon_sizes, lat_sizes.iloc[0]):
+            raise ValueError("Expected uniform square ICOADS grid cells")
+        summary = {"grid_size_deg": float(lat_sizes.iloc[0])}
     return grid, summary
 
 
@@ -75,10 +90,12 @@ def plot_spatial(grid: pd.DataFrame, summary: dict, output_root: Path) -> Path:
     norm = mcolors.LogNorm(vmin=1, vmax=max(1, float(nonzero.max()) if nonzero.size else 1))
     cmap = plt.get_cmap("YlOrRd")
 
-    projection = ccrs.PlateCarree() if HAS_CARTOPY else None
+    # Prefer the repository's cached geometry so plotting also works offline.
+    use_cartopy = HAS_CARTOPY and not LAND_BOUNDARY_FILE.exists()
+    projection = ccrs.PlateCarree() if use_cartopy else None
     fig = plt.figure(figsize=(9.6, 8.0))
-    ax = plt.axes(projection=projection) if HAS_CARTOPY else plt.axes()
-    if HAS_CARTOPY:
+    ax = plt.axes(projection=projection) if use_cartopy else plt.axes()
+    if use_cartopy:
         ax.set_extent([LON_MIN, LON_MAX, LAT_MIN, LAT_MAX], crs=projection)
         mesh = ax.pcolormesh(lon_edges, lat_edges, counts, cmap=cmap, norm=norm, shading="flat", transform=projection, alpha=0.88)
         ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#E8E8E8", edgecolor="#555555", linewidth=0.45, zorder=3)
@@ -104,9 +121,12 @@ def plot_spatial(grid: pd.DataFrame, summary: dict, output_root: Path) -> Path:
     cbar.ax.tick_params(labelsize=8)
     fig.subplots_adjust(left=0.055, right=0.94, bottom=0.07, top=0.93)
     output = output_root / "icoads_2025_distribution"
-    fig.savefig(output.with_suffix(".png"), dpi=300, facecolor="white")
-    fig.savefig(output.with_suffix(".pdf"), facecolor="white")
-    fig.savefig(output.with_suffix(".svg"), facecolor="white")
+    format_figure(fig)
+    # Crop the canvas around the map, coordinate labels and colorbar.
+    export_options = {"bbox_inches": "tight", "pad_inches": 0.04, "facecolor": "white"}
+    fig.savefig(output.with_suffix(".png"), dpi=600, **export_options)
+    fig.savefig(output.with_suffix(".pdf"), **export_options)
+    fig.savefig(output.with_suffix(".svg"), **export_options)
     plt.close(fig)
     return output.with_suffix(".png")
 

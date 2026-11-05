@@ -1,4 +1,20 @@
-# 按预报时效误差图
+# 论文图批量生成
+
+在项目根目录运行：
+
+```powershell
+python -m experiment_2025.plots.regenerate_manuscript_figures
+```
+
+读取 `experiment_2025/Statistics/data`，在 `experiment_2025/plots/figures` 重新生成8张论文图，每张输出600 dpi PNG以及可编辑文本的PDF、SVG。此入口只绘图，不下载数据、不运行模型、不重新计算统计结果。
+
+公共样式在 `publication_style.py`：字体依次为 `Times New Roman`、`SimSun`、`SimHei`、`Microsoft YaHei`、`DejaVu Serif`；去掉整图大标题，保留子图编号、站点、月份等必要标识；共用图例为白底黑框，位于首幅子图左上角。雷达图放在整图左上角空白区以避开方向刻度，ICOADS图保留右侧连续色标。
+
+台风路径脚本为 `plot_typhoon_tracks_stations.py`，读取统计数据目录中的 `typhoon_tracks_jma_2025.json`、`typhoon_map_stations.json` 和 `typhoon_map_geometry.geojson`。沿用JMA完整最佳路径和Natural Earth底图，仅显示遮浪、大陈、东山三个站；范围为98°—150°E、8°—35°N，固定起报时刻用空心方块表示。数据目录与生成的图片目录按项目既有规则由Git忽略，应单独保留。
+
+批量生成时会同时写入 `figures/figure_style_qa.json`，检查整图标题、文本字体与图例边界。
+
+## 按预报时效误差图
 
 `plot_metrics.py` 读取：
 

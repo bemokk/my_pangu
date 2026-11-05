@@ -5,6 +5,12 @@ import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+try:
+    from .publication_style import FONT_FAMILY, format_figure, set_style as set_publication_style
+except ImportError:
+    from publication_style import FONT_FAMILY, format_figure, set_style as set_publication_style
+set_publication_style()
+
 import pandas as pd
 
 
@@ -33,7 +39,7 @@ OUTPUT_STEM = "wind_speed_beaufort_rmse_mae_2025"
 def set_style() -> None:
     plt.rcParams.update(
         {
-            "font.family": ["Times New Roman", "SimSun", "Microsoft YaHei", "DejaVu Serif"],
+            "font.family": FONT_FAMILY,
             "font.size": 10,
             "axes.titlesize": 11,
             "axes.labelsize": 10,
@@ -45,7 +51,7 @@ def set_style() -> None:
             "figure.facecolor": "white",
             "axes.facecolor": "white",
             "savefig.facecolor": "white",
-            "savefig.dpi": 300,
+            "savefig.dpi": 600,
         }
     )
 
@@ -111,22 +117,12 @@ def plot_metrics(frame: pd.DataFrame) -> tuple[Path, Path, Path]:
                 spine.set_color("#444444")
                 spine.set_linewidth(0.8)
 
-    handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(
-        handles,
-        labels,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.995),
-        frameon=True,
-        ncol=len(EXPERIMENTS),
-        handlelength=2.3,
-        columnspacing=1.2,
-    )
-    fig.tight_layout(rect=[0.02, 0.03, 0.98, 0.93], pad=1.0, w_pad=1.2, h_pad=1.2)
+    fig.tight_layout(rect=[0.02, 0.03, 0.98, 0.99], pad=1.0, w_pad=1.2, h_pad=1.2)
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     png_path = FIGURES_DIR / f"{OUTPUT_STEM}.png"
     svg_path = FIGURES_DIR / f"{OUTPUT_STEM}.svg"
     pdf_path = FIGURES_DIR / f"{OUTPUT_STEM}.pdf"
+    format_figure(fig)
     fig.savefig(png_path, bbox_inches="tight")
     fig.savefig(svg_path, bbox_inches="tight")
     fig.savefig(pdf_path, bbox_inches="tight")
