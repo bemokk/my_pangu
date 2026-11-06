@@ -3,8 +3,9 @@
 The program uses only ICOADS records whose manifest ``kind`` is ``updated`` and
 whose file is NetCDF.  It samples the model u10/v10 fields at each observation
 location with bilinear interpolation, then writes speed and direction RMSE and
-MAE by lead hour and valid-time month. RMSE, MAE and CC are computed for each
-target day and lead, then averaged with equal weight over valid daily cases.
+MAE by lead hour and valid-time month. Reported RMSE, MAE and CC are pooled
+over all valid observation pairs in each output grouping; daily metrics remain
+available in the per-target diagnostic CSVs.
 """
 from __future__ import annotations
 
@@ -353,22 +354,15 @@ def direction_metrics(part: Partial) -> dict:
     }
 
 
-def finite_mean(values: list[float]) -> float:
-    """Return the arithmetic mean of finite daily metric values."""
-    array = np.asarray(values, dtype=float)
-    array = array[np.isfinite(array)]
-    return float(np.mean(array)) if array.size else float("nan")
-
-
 def daily_metric_values(daily_stats: dict, key: tuple, variable: str) -> dict:
     return daily_stats.get(key, {}).get(variable, {})
 
 
-def replace_with_daily_metrics(values: dict, daily_values: dict) -> dict:
+def add_daily_counts(values: dict, daily_values: dict) -> dict:
+    """Keep daily-valid counts as metadata without replacing pooled metrics."""
     values = dict(values)
     for metric in ("rmse", "mae", "cc"):
         samples = daily_values.get(metric, [])
-        values[metric] = finite_mean(samples)
         values[f"{metric}_daily_count"] = int(np.isfinite(np.asarray(samples, dtype=float)).sum())
     return values
 
@@ -476,8 +470,34 @@ def rows_for_totals(totals: dict, group: str, variable: str, daily_cc: dict) -> 
             values = metrics(part)
         else:
             values = direction_metrics(part)
-        values = replace_with_daily_metrics(values, daily_metric_values(daily_cc, (experiment, lead, month), variable))
+        values = add_daily_counts(values, daily_metric_values(daily_cc, (experiment, lead, month), variable))
         rows.append({"experiment": experiment, "lead_hour": lead, "month": month, "variable": variable, **values})
+    return rows
+
+
+def rows_for_month_overall(totals: dict, variable: str, daily_cc: dict) -> list[dict]:
+    """Return sample-pooled rows across all valid-time months for each lead."""
+    groups: dict[tuple, Partial] = {}
+    for (experiment, lead, _month), part in totals.items():
+        groups.setdefault((experiment, lead), Partial()).add(part)
+    rows = []
+    for (experiment, lead), part in sorted(groups.items()):
+        values = metrics(part) if variable == "wind_speed" else direction_metrics(part)
+        daily_values = {metric: [] for metric in ("rmse", "mae", "cc")}
+        for (exp, daily_lead, _month), values_by_day in daily_cc.items():
+            if exp == experiment and daily_lead == lead:
+                for metric in daily_values:
+                    daily_values[metric].extend(values_by_day[variable][metric])
+        values = add_daily_counts(values, daily_values)
+        rows.append(
+            {
+                "experiment": experiment,
+                "lead_hour": lead,
+                "month": "overall",
+                "variable": variable,
+                **values,
+            }
+        )
     return rows
 
 
@@ -502,9 +522,42 @@ def aggregate(totals: dict, by: str, variable: str, daily_cc: dict) -> list[dict
             if (by == "lead" and lead == key[1]) or (by == "month" and month == key[1]):
                 for metric in daily_groups:
                     daily_groups[metric].extend(values_by_day[variable][metric])
-        row.update(replace_with_daily_metrics(values, daily_groups))
+        row.update(add_daily_counts(values, daily_groups))
         output.append(row)
     return output
+
+
+def write_wind_direction_mae_month_lead(
+    path: Path,
+    totals: dict,
+    direction_lead_month: list[dict],
+    direction_month: list[dict],
+) -> None:
+    """Write a month-by-lead wind-direction MAE matrix with averages."""
+    lookup = {
+        (row["experiment"], str(row["month"]), int(row["lead_hour"])): row["mae"]
+        for row in direction_lead_month
+    }
+    month_average = {
+        (row["experiment"], str(row["month"])): row["mae"]
+        for row in direction_month
+    }
+    all_partials: dict[str, Partial] = {}
+    for (experiment, _lead, _month), part in totals.items():
+        all_partials.setdefault(experiment, Partial()).add(part)
+    rows = []
+    experiments = sorted({row["experiment"] for row in direction_lead_month})
+    for experiment in experiments:
+        for month in [*range(1, 13), "overall"]:
+            row = {"experiment": experiment, "month": month}
+            for lead in LEADS:
+                row[f"lead_{lead}"] = lookup.get((experiment, str(month), lead), float("nan"))
+            if month == "overall":
+                row["overall"] = direction_metrics(all_partials[experiment])["mae"]
+            else:
+                row["overall"] = month_average.get((experiment, str(month)), float("nan"))
+            rows.append(row)
+    write_csv(path, rows)
 
 
 def write_csv(path: Path, rows: list[dict]) -> None:
@@ -522,10 +575,18 @@ def write_csv(path: Path, rows: list[dict]) -> None:
 
 def save_results(args, totals, missing, info, daily_cc, daily_cc_rows):
     args.data_root.mkdir(parents=True, exist_ok=True)
-    speed_lm = [row for row in rows_for_totals(totals, "lead_month", "wind_speed", daily_cc)]
-    direction_lm = [row for row in rows_for_totals(totals, "lead_month", "wind_direction", daily_cc)]
+    speed_lm = rows_for_totals(totals, "lead_month", "wind_speed", daily_cc)
+    direction_lm = rows_for_totals(totals, "lead_month", "wind_direction", daily_cc)
+    speed_lm.extend(rows_for_month_overall(totals, "wind_speed", daily_cc))
+    direction_lm.extend(rows_for_month_overall(totals, "wind_direction", daily_cc))
     write_csv(args.data_root / "wind_speed_metrics_by_lead_month.csv", speed_lm)
     write_csv(args.data_root / "wind_direction_metrics_by_lead_month.csv", direction_lm)
+    write_wind_direction_mae_month_lead(
+        args.data_root / "wind_direction_mae_by_month_lead.csv",
+        totals,
+        direction_lm,
+        aggregate(totals, "month", "wind_direction", daily_cc),
+    )
     write_csv(args.data_root / "wind_speed_metrics_by_lead.csv", aggregate(totals, "lead", "wind_speed", daily_cc))
     write_csv(args.data_root / "wind_direction_metrics_by_lead.csv", aggregate(totals, "lead", "wind_direction", daily_cc))
     write_csv(args.data_root / "wind_speed_metrics_by_month.csv", aggregate(totals, "month", "wind_speed", daily_cc))
@@ -541,12 +602,12 @@ def save_results(args, totals, missing, info, daily_cc, daily_cc_rows):
         "end_date": args.end_date.strftime("%Y-%m-%d"),
         "observation_policy": "ICOADS manifest kind=updated and format=nc only; preliminary and DAT.GZ excluded; Natural Earth 10m land/lake mask applied",
         "area_policy": "latitude 13..42 N, longitude 103..130 E",
-        "aggregation_method": "daily_arithmetic_mean",
-        "rmse_policy": "Arithmetic mean of per-target-day RMSE at each lead; take the square root within each day before averaging, with equal day weights",
-        "mae_policy": "Arithmetic mean of per-target-day MAE at each lead, with equal day weights",
-        "cc_policy": "Wind-speed and wind-direction CC are arithmetic means of valid per-target-day CC values, with equal day weights",
-        "daily_count_policy": "RMSE/MAE require at least one finite observation pair; CC requires at least two pairs and a defined correlation. Each metric excludes only its own nonfinite daily values. n remains the total observation-pair count",
-        "monthly_policy": "Month is the valid-time month. Monthly-by-lead outputs average daily values at that lead; by-month outputs average all valid daily lead cases within the month",
+        "aggregation_method": "sample_pooled",
+        "rmse_policy": "Square root of pooled squared error divided by pooled observation-pair count",
+        "mae_policy": "Pooled absolute error divided by pooled observation-pair count",
+        "cc_policy": "Correlation computed from pooled sufficient statistics over all observation pairs",
+        "daily_count_policy": "Daily counts are retained as metadata only; n remains the total observation-pair count and all reported metrics are sample-pooled",
+        "monthly_policy": "Month is the valid-time month. Monthly-by-lead and by-month outputs use pooled observation pairs; wind_direction_mae_by_month_lead.csv adds month/lead overall rows and columns",
         "cc_daily_count_policy": "cc_daily_count counts valid target-day CC values in each output grouping; daily CC requires at least two valid records and nonzero variance",
         "info": info,
         "missing_outputs": len(missing),
