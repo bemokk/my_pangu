@@ -19,7 +19,7 @@ except ImportError:
     from publication_style import set_style, format_figure
 
 ROOT = Path(__file__).resolve().parents[1]
-AREA = [35.0, 98.0, 8.0, 150.0]  # lat_max, lon_min, lat_min, lon_max
+AREA = [38.0, 98.0, 10.0, 150.0]  # lat_max, lon_min, lat_min, lon_max
 COLORS = ["#59C878", "#E978B1", "#A07AEC"]
 LINESTYLES = ["-", "--", ":"]
 
@@ -65,10 +65,11 @@ def plot(data_root: Path, figures_root: Path, *, ax=None):
         ax.annotate(track["name"]+" "+track["id"], (lon[0],y[0]),
                     xytext=(-8 if i==2 else 8, -15 if i!=1 else 12), textcoords="offset points",
                     ha="right" if i==2 else "left", fontsize=11, path_effects=halo, zorder=6)
-        station = stations[track["station"]]
+    for station_code in dict.fromkeys([track["station"] for track in tracks] + ["XMD"]):
+        station = stations[station_code]
         sx, sy = station["lon"], mercator_y(station["lat"])
         ax.scatter([sx], [sy], s=42, color="#329AF0", zorder=7)
-        left = track["station"] in ("DSN", "ZLG")
+        left = station_code in ("DSN", "ZLG")
         ax.annotate(station["name"], (sx, sy), xytext=(-10 if left else 10, -2),
                     textcoords="offset points", ha="right" if left else "left", va="center",
                     fontsize=11, path_effects=halo, zorder=8)
@@ -79,7 +80,7 @@ def plot(data_root: Path, figures_root: Path, *, ax=None):
     ax.set_aspect("equal", adjustable="box")
     ax.set_xticks([98,110,120,130,140,150])
     ax.set_xticklabels([f"{v}°E" for v in [98,110,120,130,140,150]])
-    lat_ticks=[8,10,15,20,25,30,35]
+    lat_ticks=[10,15,20,25,30,35,38]
     ax.set_yticks(mercator_y(lat_ticks))
     ax.set_yticklabels([f"{v}°N" for v in lat_ticks])
     ax.tick_params(length=0, pad=6, labelsize=10)

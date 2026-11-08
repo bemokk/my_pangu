@@ -40,7 +40,7 @@ def plot(data_root, figures_root):
     axes = np.array([[fig.add_subplot(grid[row, col]) for col in range(2)]
                      for row in range(3)])
     plot_winds(frame, "beijing", figures_root, fig=fig, axes=axes, panel_offset=1,
-               show_initialization=False)
+               show_initialization=False, experiments=("gdas_direct", "era5_lagged_120h"))
     plot_tracks(data_root, figures_root, ax=map_ax)
     # Keep labels and the inset legend legible without crowding the smaller map.
     for text in map_ax.findobj(Text):

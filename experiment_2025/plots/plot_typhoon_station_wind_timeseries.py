@@ -181,7 +181,7 @@ def _configure_axes(ax, direction: bool, lead_hours: np.ndarray, start_date_utc:
 def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path,
                 output_stem="typhoon_station_wind_timeseries", speed_max=None,
                 title=None, *, fig=None, axes=None, panel_offset=0,
-                show_initialization=True) -> Path:
+                show_initialization=True, experiments=EXPERIMENTS) -> Path:
     validate_matched_data(frame)
     actual_mode = infer_timezone_mode(frame)
     if timezone_mode != actual_mode:
@@ -244,7 +244,7 @@ def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path,
                     sub[f"{experiment}_speed"].to_numpy(float),
                     sub[f"{experiment}_direction"].to_numpy(float),
                 )
-                for experiment in EXPERIMENTS
+                for experiment in experiments
             },
         }
         direction_values = _continuous_directions([values[1] for values in series.values()])

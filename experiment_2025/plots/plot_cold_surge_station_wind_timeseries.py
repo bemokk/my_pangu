@@ -47,6 +47,7 @@ DEFAULT_FIGURES_ROOT = PLOTS_ROOT / "figures"
 TARGET_TIME = datetime(2025, 2, 5, 0)
 END_TIME = TARGET_TIME + timedelta(hours=120)
 EXPERIMENTS = ("era5_direct", "gdas_direct", "era5_lagged_120h", "gdas_lagged_120h")
+PLOT_EXPERIMENTS = ("gdas_direct", "era5_lagged_120h")
 STYLES = {
     "observed": {"label": "观测", "color": "#333333", "linestyle": "-", "linewidth": 1.8},
     "era5_direct": {"label": "E0", "color": "#43A3EF", "linestyle": "-", "linewidth": 1.45},
@@ -177,7 +178,7 @@ def plot_figure(frame: pd.DataFrame, timezone_mode: str, figures_root: Path) -> 
         speed_ax.set_title(f"({chr(97 + row_index * 2)}) {case['display']} 风速", loc="left", fontweight="bold", fontsize=11)
         direction_ax.set_title(f"({chr(98 + row_index * 2)}) {case['display']} 风向", loc="left", fontweight="bold", fontsize=11)
         series = {"observed": (sub["obs_speed"].to_numpy(float), sub["obs_direction"].to_numpy(float))}
-        series.update({experiment: (sub[f"{experiment}_speed"].to_numpy(float), sub[f"{experiment}_direction"].to_numpy(float)) for experiment in EXPERIMENTS})
+        series.update({experiment: (sub[f"{experiment}_speed"].to_numpy(float), sub[f"{experiment}_direction"].to_numpy(float)) for experiment in PLOT_EXPERIMENTS})
         directions = _continuous_directions([values[1] for values in series.values()])
         lower, upper = _direction_limits(directions)
         direction_ax.set_ylim(lower, upper)
